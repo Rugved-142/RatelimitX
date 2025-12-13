@@ -1,5 +1,6 @@
-package main.java.com.ratelimitx.core.controller;
+package com.ratelimitx.core.controller;
 
+import com.ratelimitx.core.service.RateLimiterService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -8,11 +9,11 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import main.java.com.ratelimitx.core.service.RateLimiterService;
+
 
 @RestController
 @RequestMapping("/api")
-public class ApiContorller {
+public class ApiController {
     
     @Autowired
     private RateLimiterService rateLimiterService;
@@ -20,7 +21,7 @@ public class ApiContorller {
     @GetMapping("/data")
     public ResponseEntity<String> getData( @RequestHeader(value="X-API-Key", defaultValue="anonymous") String apiKey){
         if(!rateLimiterService.checkRateLimit(apiKey, 10)){
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body("Rate imit exceeded");
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body("Rate limit exceeded");
         }
         return ResponseEntity.ok("Success! Here's yourData");
     }

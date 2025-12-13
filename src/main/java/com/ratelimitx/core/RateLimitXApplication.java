@@ -1,4 +1,4 @@
-package main.java.com.ratelimitx.core;
+package com.ratelimitx.core;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
