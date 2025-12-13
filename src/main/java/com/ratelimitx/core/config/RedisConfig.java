@@ -1,4 +1,4 @@
-package main.java.com.ratelimitx.core.config;
+package com.ratelimitx.core.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -9,7 +9,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 public class RedisConfig {
 
     @Bean
-    public StringRedisTemplate StringRedisTemplate(RedisConnectionFactory factory){
+    public StringRedisTemplate stringRedisTemplate(RedisConnectionFactory factory){
         return new StringRedisTemplate(factory);
     }
 }
