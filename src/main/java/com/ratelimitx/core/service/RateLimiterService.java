@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class RateLimiterService {
-    
+
     @Autowired
     private StringRedisTemplate redisTemplate;
 
@@ -54,7 +54,7 @@ public class RateLimiterService {
 
         boolean allowed = count <= maxRequest;
         int remaining = Math.max(0, maxRequest - count.intValue());
-        
+
         // Seconds until window resets
         int secondsIntoMinute = (int)((System.currentTimeMillis() / 1000) % 60);
         long resetTime = 60 - secondsIntoMinute;
