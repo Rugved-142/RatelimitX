@@ -17,6 +17,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.ratelimitx.core.model.RateLimitResult;
+import com.ratelimitx.core.service.TokenBucketService;
+
+
+
+
 
 @RestController
 @RequestMapping("/admin")
@@ -25,6 +31,7 @@ public class AdminController {
 
     @Autowired
     private StringRedisTemplate redis;
+    @Autowired TokenBucketService tokenBucketService;
 
     private static final long START_TIME = System.currentTimeMillis();
 
@@ -92,11 +99,11 @@ public class AdminController {
 
         redis.opsForHash().put("user-limits",userId,String.valueOf(limit));
 
-        Map<String, Object> resposne= new HashMap<>();
-        resposne.put("status","success");
-        resposne.put("userId",userId);
-        resposne.put("newLimit",limit);
-        return resposne;
+        Map<String, Object> response= new HashMap<>();
+        response.put("status","success");
+        response.put("userId",userId);
+        response.put("newLimit",limit);
+        return response;
     }
 
     @DeleteMapping("/reset/{userId}")
@@ -126,6 +133,20 @@ public class AdminController {
             health.put("status","UNHEALTHY");
         }
         return health;
+    }
+
+    @GetMapping("/bucket/{userId}")
+    public Map<String, Object> getBucketStatus(@PathVariable String userId){
+        RateLimitResult result = tokenBucketService.getBucketStatus(userId);
+
+        Map<String, Object> status = new HashMap<>();
+        status.put("userId", userId);
+        status.put("algorithm", "token-bucket");
+        status.put("tokensRemaining", result.getRemaining());
+        status.put("bucketCapacity", result.getLimit());
+        status.put("isAllowed", result.isAllowed());
+
+        return status;
     }
     private int getUserLimit(String userId) {
         String customLimit = (String) redis.opsForHash().get("user-limits", userId);
