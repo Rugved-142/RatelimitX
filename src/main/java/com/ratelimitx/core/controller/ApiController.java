@@ -12,7 +12,10 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ratelimitx.core.config.RateLimitConfig;
 import com.ratelimitx.core.model.RateLimitResult;
 import com.ratelimitx.core.service.RateLimiterService;
+import com.ratelimitx.core.service.SlidingWindowService;
 import com.ratelimitx.core.service.TokenBucketService;
+
+
 
 
 
@@ -24,12 +27,15 @@ import com.ratelimitx.core.service.TokenBucketService;
 @RestController
 @RequestMapping("/api")
 public class ApiController {
-    
+
     @Autowired
     private RateLimiterService rateLimiterService;
 
     @Autowired
     private TokenBucketService tokenBucketService;
+
+    @Autowired
+    private SlidingWindowService slidingWindowService;
 
     @Autowired
     @org.springframework.beans.factory.annotation.Qualifier("rateLimitConfig")
@@ -38,18 +44,14 @@ public class ApiController {
     @GetMapping("/data")
     public ResponseEntity<String> getData( @RequestHeader(value="X-API-Key", defaultValue="anonymous") String apiKey){
 
-        RateLimitResult result;
-    
-        if ("token-bucket".equals(config.getAlgorithm())) {
-            result = tokenBucketService.tryConsume(apiKey);
-        } else {
-            result = rateLimiterService.checkWithInfo(apiKey);
-        }
+        RateLimitResult  result = executeRateLimitCheck(apiKey);
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-RateLimit-Limit", String.valueOf(result.getLimit()));
         headers.set("X-RateLimit-Remaining", String.valueOf(result.getRemaining()));
         headers.set("X-RateLimit-Reset", String.valueOf(result.getResetTime()));
+        headers.set("X-Algorithm", config.getAlgorithm());
+
         if(!result.isAllowed()){
             headers.set("Retry-After", String.valueOf(result.getResetTime() / 1000));
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
@@ -59,5 +61,13 @@ public class ApiController {
         return ResponseEntity.ok()
                 .headers(headers)
                 .body("Success! Here's your data");
+    }
+
+    private RateLimitResult executeRateLimitCheck(String apiKey) {
+        return switch (config.getAlgorithm()) {
+            case "token-bucket" -> tokenBucketService.tryConsume(apiKey);
+            case "sliding-window" -> slidingWindowService.checkRateLimit(apiKey);
+            default -> rateLimiterService.checkWithInfo(apiKey);  // fixed-window
+        };
     }
 }

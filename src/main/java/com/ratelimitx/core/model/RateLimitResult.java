@@ -5,7 +5,7 @@ public class RateLimitResult {
     private int limit;
     private int remaining;
     private long resetTime;
-    
+
     // Constructor, getters, setters
     public RateLimitResult(boolean allowed, int limit, int remaining, long resetTime) {
         this.allowed = allowed;
@@ -13,7 +13,7 @@ public class RateLimitResult {
         this.remaining = remaining;
         this.resetTime = resetTime;
     }
-    
+
     // Getters
     public boolean isAllowed() { return allowed; }
     public int getLimit() { return limit; }
