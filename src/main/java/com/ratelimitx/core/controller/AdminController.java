@@ -17,13 +17,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.ratelimitx.core.circuitbreaker.CircuitBreaker;
+import com.ratelimitx.core.circuitbreaker.LocalRateLimiter;
 import com.ratelimitx.core.config.RateLimitConfig;
 import com.ratelimitx.core.model.RateLimitResult;
+import com.ratelimitx.core.service.ResilientRateLimiter;
 import com.ratelimitx.core.service.SlidingWindowService;
 import com.ratelimitx.core.service.TokenBucketService;
-
-
-
 
 
 @RestController
@@ -43,6 +43,15 @@ public class AdminController {
     @Autowired
     @org.springframework.beans.factory.annotation.Qualifier("rateLimitConfig")
     private RateLimitConfig config;
+
+    @Autowired
+    private CircuitBreaker circuitBreaker;
+
+    @Autowired
+    private LocalRateLimiter localRateLimiter;
+
+    @Autowired
+    private ResilientRateLimiter resilientRateLimiter;
 
     private static final long START_TIME = System.currentTimeMillis();
 
@@ -269,6 +278,26 @@ public class AdminController {
         Map<String, Object> response = new HashMap<>();
         response.put("status", "success");
         response.put("message", "Reset user: " + userId + " (all algorithms)");
+        return response;
+    }
+
+    //==================== Circuit Breaer ENDPOINTS ====================
+    @GetMapping("/circuit")
+    public Map<String, Object> getCircuitBreakerStatus() {
+        Map<String, Object> status = circuitBreaker.getStatus();
+        status.put("currentMode", resilientRateLimiter.getCurrentMode());
+        status.put("localFallbackActiveUsers", localRateLimiter.getActiveUsers());
+        return status;
+    }
+
+    @PostMapping("/circuit/reset")
+    public Map<String, Object> resetCircuitBreaker() {
+        circuitBreaker.reset();
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "success");
+        response.put("message", "Circuit breaker reset to CLOSED state");
+        response.put("currentState", circuitBreaker.getState().toString());
         return response;
     }
 

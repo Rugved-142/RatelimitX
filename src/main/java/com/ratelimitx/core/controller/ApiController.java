@@ -1,5 +1,7 @@
 package com.ratelimitx.core.controller;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -12,17 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ratelimitx.core.config.RateLimitConfig;
 import com.ratelimitx.core.model.RateLimitResult;
 import com.ratelimitx.core.service.MetricsService;
-import com.ratelimitx.core.service.RateLimiterService;
-import com.ratelimitx.core.service.SlidingWindowService;
-import com.ratelimitx.core.service.TokenBucketService;
-
-
-
-
-
-
-
-
+import com.ratelimitx.core.service.ResilientRateLimiter;
 
 
 
@@ -30,14 +22,10 @@ import com.ratelimitx.core.service.TokenBucketService;
 @RequestMapping("/api")
 public class ApiController {
 
-    @Autowired
-    private RateLimiterService rateLimiterService;
+    private static final Logger logger = LoggerFactory.getLogger(ApiController.class);
 
     @Autowired
-    private TokenBucketService tokenBucketService;
-
-    @Autowired
-    private SlidingWindowService slidingWindowService;
+    private ResilientRateLimiter resilientRateLimiter;
 
     @Autowired
     MetricsService metricsService;
@@ -51,7 +39,7 @@ public class ApiController {
 
         long startTime = System.currentTimeMillis();
 
-        RateLimitResult  result = executeRateLimitCheck(apiKey);
+        RateLimitResult  result = resilientRateLimiter.checkRateLimit(apiKey);
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("X-RateLimit-Limit", String.valueOf(result.getLimit()));
@@ -61,7 +49,12 @@ public class ApiController {
 
         long responseTime = System.currentTimeMillis() - startTime;
 
-        metricsService.recordRequest(apiKey,result.isAllowed(),responseTime);
+        try {
+            metricsService.recordRequest(apiKey, result.isAllowed(), responseTime);
+        } catch (Exception e) {
+            // Log but don't fail the request - metrics are nice-to-have
+            logger.warn("Failed to record metrics (Redis may be down): {}", e.getMessage());
+        }
 
         if(!result.isAllowed()){
             headers.set("Retry-After", String.valueOf(result.getResetTime() / 1000));
@@ -72,13 +65,5 @@ public class ApiController {
         return ResponseEntity.ok()
                 .headers(headers)
                 .body("Success! Here's your data");
-    }
-
-    private RateLimitResult executeRateLimitCheck(String apiKey) {
-        return switch (config.getAlgorithm()) {
-            case "token-bucket" -> tokenBucketService.tryConsume(apiKey);
-            case "sliding-window" -> slidingWindowService.checkRateLimit(apiKey);
-            default -> rateLimiterService.checkWithInfo(apiKey);  // fixed-window
-        };
     }
 }
