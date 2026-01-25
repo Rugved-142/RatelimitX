@@ -11,9 +11,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.ratelimitx.core.config.RateLimitConfig;
 import com.ratelimitx.core.model.RateLimitResult;
+import com.ratelimitx.core.service.MetricsService;
 import com.ratelimitx.core.service.RateLimiterService;
 import com.ratelimitx.core.service.SlidingWindowService;
 import com.ratelimitx.core.service.TokenBucketService;
+
 
 
 
@@ -38,11 +40,16 @@ public class ApiController {
     private SlidingWindowService slidingWindowService;
 
     @Autowired
+    MetricsService metricsService;
+
+    @Autowired
     @org.springframework.beans.factory.annotation.Qualifier("rateLimitConfig")
     private RateLimitConfig config;
 
     @GetMapping("/data")
     public ResponseEntity<String> getData( @RequestHeader(value="X-API-Key", defaultValue="anonymous") String apiKey){
+
+        long startTime = System.currentTimeMillis();
 
         RateLimitResult  result = executeRateLimitCheck(apiKey);
 
@@ -51,6 +58,10 @@ public class ApiController {
         headers.set("X-RateLimit-Remaining", String.valueOf(result.getRemaining()));
         headers.set("X-RateLimit-Reset", String.valueOf(result.getResetTime()));
         headers.set("X-Algorithm", config.getAlgorithm());
+
+        long responseTime = System.currentTimeMillis() - startTime;
+
+        metricsService.recordRequest(apiKey,result.isAllowed(),responseTime);
 
         if(!result.isAllowed()){
             headers.set("Retry-After", String.valueOf(result.getResetTime() / 1000));
