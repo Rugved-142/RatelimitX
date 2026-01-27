@@ -1,0 +1,54 @@
+version: '3.8'
+
+
+services:
+  # ============================================================
+  # REDIS SERVICE
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: ratelimitx-redis
+    ports: 
+      - "6379:6379"
+    volumes: 
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ratelimitx-network
+
+
+  # ============================================================
+  # RATELIMITX APPLICATION
+  # ============================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ratelimitx-app
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - ratelimitx-network
+
+# ============================================================
+# VOLUMES (Persistent Storage)
+# ============================================================
+volumes:
+  redis-data:
+
+# ============================================================
+# NETWORKS
+# ============================================================
+networks:
+  ratelimitx-network:
+    driver: bridge

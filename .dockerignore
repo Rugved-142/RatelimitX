@@ -1,0 +1,37 @@
+# Build output (we rebuild inside Docker)
+target/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# Git
+.git/
+.gitignore
+
+# Docker files (no need to copy these into the image)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+*.env.local
+
+# Documentation (not needed in runtime image)
+README.md
+docs/
+
+# Test files
+*.test.js
+__tests__/
