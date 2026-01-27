@@ -741,17 +741,3 @@ ratelimit.window-size-seconds=60      # Window duration
 
 - GitHub: [Rugved-142](https://github.com/Rugved-142)
 - LinkedIn: [Rugved](https://www.linkedin.com/in/rugved-gundawar/)
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- Inspired by rate limiters used at Stripe, AWS, and Cloudflare
-- Circuit Breaker pattern based on Netflix Hystrix principles
-- Load testing best practices from Gatling documentation
