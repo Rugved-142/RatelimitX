@@ -2,6 +2,27 @@ version: '3.8'
 
 
 services:
+  #============================================================
+  # POSTGRESQL DATABASE
+  # ============================================================
+  postgres:
+    image: postgres:16-16-alpine
+    container_name: ratelimitx-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=ratelimitx
+      - POSTGRES_USER=ratelimitx
+      - POSTGRES_PASSWORD=ratelimitx123
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ratelimitx -d ratelimitx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ratelimitx-network
   # ============================================================
   # REDIS SERVICE
   # ============================================================
@@ -34,6 +55,11 @@ services:
     environment:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/ratelimitx
+      - SPRING_DATASOURCE_USERNAME=ratelimitx
+      - SPRING_DATASOURCE_PASSWORD=ratelimitx123
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=update
+      - JWT_SECRET=myVeryLongAndSecureSecretKeyForJWTTokenGeneration123456789
     depends_on:
       redis:
         condition: service_healthy
@@ -45,6 +71,7 @@ services:
 # ============================================================
 volumes:
   redis-data:
+  postgres-data:
 
 # ============================================================
 # NETWORKS
