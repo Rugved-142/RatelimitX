@@ -12,12 +12,7 @@ import com.ratelimitx.core.model.RateLimitResult;
 
 
 
-/**
- * Resilient rate limiter that uses Circuit Breaker pattern.
- *
- * - When Redis is UP: Uses Redis-based rate limiting (distributed)
- * - When Redis is DOWN: Falls back to local in-memory rate limiting
- */
+
 @Service
 public class ResilientRateLimiter {
 
@@ -42,25 +37,25 @@ public class ResilientRateLimiter {
     @org.springframework.beans.factory.annotation.Qualifier("rateLimitConfig")
     private RateLimitConfig config;
 
-    /**
-     * Check rate limit with circuit breaker protection.
-     *
-     * This is the main method to use instead of calling services directly.
-     */
     public RateLimitResult checkRateLimit(String userId) {
 
         return circuitBreaker.execute(
-            // Primary operation: Try Redis
             () -> executeRedisRateLimit(userId),
 
-            // Fallback operation: Use local memory
             () -> executeLocalFallback(userId)
         );
     }
 
     /**
-     * Execute rate limit check using Redis (primary)
+     * Check rate limit with custom limit (based on user tier)
      */
+    public RateLimitResult checkRateLimit(String userId, int customLimit) {
+        return circuitBreaker.execute(
+                () -> executeRedisRateLimit(userId, customLimit),
+                () -> executeLocalFallback(userId, customLimit)
+        );
+    }
+
     private RateLimitResult executeRedisRateLimit(String userId) {
         return switch (config.getAlgorithm()) {
             case "token-bucket" -> tokenBucketService.tryConsume(userId);
@@ -69,24 +64,37 @@ public class ResilientRateLimiter {
         };
     }
 
-    /**
-     * Execute rate limit check using local memory (fallback)
-     */
+    private RateLimitResult executeRedisRateLimit(String userId, int customLimit) {
+        // Use customLimit instead of default
+        String currentAlgorithm = config.getAlgorithm();
+        
+        switch (currentAlgorithm) {
+            case "token-bucket":
+                // Token bucket doesn't support custom limits in this version, use default
+                return tokenBucketService.tryConsume(userId);
+            case "sliding-window":
+                // Sliding window supports custom parameters
+                return slidingWindowService.checkRateLimit(userId, customLimit, 60);
+            case "fixed-window":
+            default:
+                // Fixed window with custom limit
+                return fixedWindowService.checkWithInfo(userId, customLimit);
+        }
+    }
+
     private RateLimitResult executeLocalFallback(String userId) {
         logger.debug("Using local fallback for user: {}", userId);
         return localRateLimiter.checkRateLimit(userId);
     }
 
-    /**
-     * Check if currently using fallback
-     */
+    private RateLimitResult executeLocalFallback(String userId, int customLimit) {
+        return localRateLimiter.isAllowed(userId, customLimit);
+    }
+
     public boolean isUsingFallback() {
         return !circuitBreaker.isAllowingRequests();
     }
 
-    /**
-     * Get current algorithm name (or "local-fallback" if circuit is open)
-     */
     public String getCurrentMode() {
         if (isUsingFallback()) {
             return "local-fallback";

@@ -17,6 +17,15 @@ import jakarta.annotation.PostConstruct;
 
 
 
+
+
+
+
+
+
+
+
+
 @Service
 public class SlidingWindowService {
 
@@ -28,6 +37,7 @@ public class SlidingWindowService {
     @org.springframework.beans.factory.annotation.Qualifier("rateLimitConfig")
     private RateLimitConfig config;
 
+    @SuppressWarnings("rawtypes")
     private DefaultRedisScript<List> slidingWindowScript;
 
     @PostConstruct

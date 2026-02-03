@@ -8,6 +8,7 @@ import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,9 +27,12 @@ import com.ratelimitx.core.service.SlidingWindowService;
 import com.ratelimitx.core.service.TokenBucketService;
 
 
+
+
 @RestController
 @RequestMapping("/admin")
 @CrossOrigin(origins = "*")
+@PreAuthorize("hasRole('ADMIN')")
 public class AdminController {
 
     @Autowired
@@ -120,6 +124,7 @@ public class AdminController {
     }
 
     @GetMapping("/health")
+    @PreAuthorize("permitAll()")
     public Map<String, Object> health() {
         Map<String, Object> health = new HashMap<>();
 

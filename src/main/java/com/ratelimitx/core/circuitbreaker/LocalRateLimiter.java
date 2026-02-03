@@ -15,6 +15,8 @@ import com.ratelimitx.core.model.RateLimitResult;
 
 
 
+
+
 @Component
 public class LocalRateLimiter {
 
@@ -24,10 +26,10 @@ public class LocalRateLimiter {
     private static final int WINDOW_SIZE_MS = 60000;
 
     public RateLimitResult checkRateLimit(String userId){
-        return checkRateLimit(userId, DEFAULT_MAX_REQUESTS);
+        return isAllowed(userId, DEFAULT_MAX_REQUESTS);
     }
 
-    public RateLimitResult checkRateLimit(String userId, int maxRequests){
+    public RateLimitResult isAllowed(String userId, int maxRequests){
         RequestCounter counter  = counters.computeIfAbsent(userId,
         k -> new RequestCounter(System.currentTimeMillis()));
 

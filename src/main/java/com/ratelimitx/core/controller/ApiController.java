@@ -1,69 +1,102 @@
 package com.ratelimitx.core.controller;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpHeaders;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.ratelimitx.core.config.RateLimitConfig;
+import com.ratelimitx.core.entity.User;
 import com.ratelimitx.core.model.RateLimitResult;
+import com.ratelimitx.core.repository.UserRepository;
 import com.ratelimitx.core.service.MetricsService;
 import com.ratelimitx.core.service.ResilientRateLimiter;
 
-
-
+/**
+ * Main API Controller - Now with JWT Authentication!
+ * 
+ * User ID is extracted from JWT token, not from header.
+ * Rate limit is based on user's tier (USER, PREMIUM, ADMIN).
+ */
 @RestController
 @RequestMapping("/api")
 public class ApiController {
-
-    private static final Logger logger = LoggerFactory.getLogger(ApiController.class);
-
-    @Autowired
-    private ResilientRateLimiter resilientRateLimiter;
-
-    @Autowired
-    MetricsService metricsService;
-
-    @Autowired
-    @org.springframework.beans.factory.annotation.Qualifier("rateLimitConfig")
-    private RateLimitConfig config;
-
+    
+    private final ResilientRateLimiter resilientRateLimiter;
+    private final MetricsService metricsService;
+    private final UserRepository userRepository;
+    
+    @Value("${ratelimit.algorithm}")
+    private String algorithm;
+    
+    public ApiController(
+            ResilientRateLimiter resilientRateLimiter,
+            MetricsService metricsService,
+            UserRepository userRepository
+    ) {
+        this.resilientRateLimiter = resilientRateLimiter;
+        this.metricsService = metricsService;
+        this.userRepository = userRepository;
+    }
+    
     @GetMapping("/data")
-    public ResponseEntity<String> getData( @RequestHeader(value="X-API-Key", defaultValue="anonymous") String apiKey){
-
+    public ResponseEntity<String> getData(Authentication authentication) {
+        
         long startTime = System.currentTimeMillis();
-
-        RateLimitResult  result = resilientRateLimiter.checkRateLimit(apiKey);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("X-RateLimit-Limit", String.valueOf(result.getLimit()));
-        headers.set("X-RateLimit-Remaining", String.valueOf(result.getRemaining()));
-        headers.set("X-RateLimit-Reset", String.valueOf(result.getResetTime()));
-        headers.set("X-Algorithm", config.getAlgorithm());
-
+        
+        // Get username from JWT (via Authentication object)
+        String userId = authentication.getName();
+        
+        // Load user to get their rate limit
+        User user = userRepository.findByUsername(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        // Check rate limit with user's custom limit
+        RateLimitResult result = resilientRateLimiter.checkRateLimit(userId, user.getRateLimit());
+        
         long responseTime = System.currentTimeMillis() - startTime;
-
+        
+        // Record metrics (with try-catch in case Redis is down)
         try {
-            metricsService.recordRequest(apiKey, result.isAllowed(), responseTime);
+            metricsService.recordRequest(userId, result.isAllowed(), responseTime);
         } catch (Exception e) {
-            // Log but don't fail the request - metrics are nice-to-have
-            logger.warn("Failed to record metrics (Redis may be down): {}", e.getMessage());
+            // Metrics are non-critical, log and continue
         }
-
-        if(!result.isAllowed()){
-            headers.set("Retry-After", String.valueOf(result.getResetTime() / 1000));
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
-                    .headers(headers)
-                    .body("Rate limit exceeded. Retry after " + result.getResetTime() + "ms");
+        
+        // Build response headers
+        ResponseEntity.BodyBuilder responseBuilder = ResponseEntity
+                .status(result.isAllowed() ? HttpStatus.OK : HttpStatus.TOO_MANY_REQUESTS)
+                .header("X-RateLimit-Limit", String.valueOf(user.getRateLimit()))
+                .header("X-RateLimit-Remaining", String.valueOf(result.getRemaining()))
+                .header("X-RateLimit-Reset", String.valueOf(result.getResetTime()))
+                .header("X-Algorithm", resilientRateLimiter.getCurrentMode())
+                .header("X-User-Role", user.getRole().name());
+        
+        if (!result.isAllowed()) {
+            responseBuilder.header("Retry-After", String.valueOf(result.getResetTime() / 1000));
+            return responseBuilder.body("Rate limit exceeded. Retry after " + result.getResetTime() + "ms");
         }
-        return ResponseEntity.ok()
-                .headers(headers)
-                .body("Success! Here's your data");
+        
+        return responseBuilder.body("Success! Here's your data");
+    }
+    
+    /**
+     * Get current user's rate limit status
+     */
+    @GetMapping("/status")
+    public ResponseEntity<?> getStatus(Authentication authentication) {
+        String userId = authentication.getName();
+        
+        User user = userRepository.findByUsername(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+        
+        return ResponseEntity.ok(java.util.Map.of(
+                "username", user.getUsername(),
+                "role", user.getRole().name(),
+                "rateLimit", user.getRateLimit(),
+                "algorithm", resilientRateLimiter.getCurrentMode()
+        ));
     }
 }

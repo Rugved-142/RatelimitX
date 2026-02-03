@@ -20,12 +20,22 @@ import jakarta.annotation.PostConstruct;
 
 
 
+
+
+
+
+
+
+
+
+
 @Service
 public class TokenBucketService {
 
     @Autowired
     private StringRedisTemplate redisTemplate;
 
+    @SuppressWarnings("rawtypes")
     private DefaultRedisScript<List> tokenBucketScript;
 
 
