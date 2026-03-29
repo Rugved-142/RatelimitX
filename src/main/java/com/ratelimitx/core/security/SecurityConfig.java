@@ -40,6 +40,12 @@ public class SecurityConfig {
                 .requestMatchers("/admin/health").permitAll()
                 .requestMatchers("/error").permitAll()
                 
+                // Allow unauthenticated access to actuator endpoints for monitoring
+                .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/actuator/prometheus").permitAll()
+                .requestMatchers("/actuator/info").permitAll()
+                .requestMatchers("/actuator/**").permitAll()
+                
                 .requestMatchers("/admin/**").hasRole("ADMIN")
                 
                 .anyRequest().authenticated()

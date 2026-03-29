@@ -41,7 +41,6 @@ services:
     networks:
       - ratelimitx-network
 
-
   # ============================================================
   # RATELIMITX APPLICATION
   # ============================================================
@@ -66,12 +65,69 @@ services:
     networks:
       - ratelimitx-network
 
+  # ============================================================
+  # PROMETHEUS MONITORING
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: ratelimitx-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ratelimitx-network
+    depends_on:
+      - app
+
+  # ============================================================
+  # GRAFANA DASHBOARDS
+  # ============================================================
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: ratelimitx-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=
+      - TZ=UTC
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ratelimitx-network
+    depends_on:
+      - prometheus
+
 # ============================================================
 # VOLUMES (Persistent Storage)
 # ============================================================
 volumes:
   redis-data:
   postgres-data:
+  prometheus-data:
+  grafana-data:
 
 # ============================================================
 # NETWORKS

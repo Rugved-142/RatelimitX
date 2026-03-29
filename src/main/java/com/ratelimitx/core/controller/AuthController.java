@@ -1,8 +1,15 @@
 package com.ratelimitx.core.controller;
 
+import com.ratelimitx.core.dto.AuthResponse;
+import com.ratelimitx.core.dto.LoginRequest;
+import com.ratelimitx.core.dto.RegisterRequest;
+import com.ratelimitx.core.entity.Role;
+import com.ratelimitx.core.entity.User;
+import com.ratelimitx.core.repository.UserRepository;
+import com.ratelimitx.core.security.JwtUtil;
+import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.Map;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -16,15 +23,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.ratelimitx.core.dto.AuthResponse;
-import com.ratelimitx.core.dto.LoginRequest;
-import com.ratelimitx.core.dto.RegisterRequest;
-import com.ratelimitx.core.entity.Role;
-import com.ratelimitx.core.entity.User;
-import com.ratelimitx.core.repository.UserRepository;
-import com.ratelimitx.core.security.JwtUtil;
 
-import jakarta.validation.Valid;
+
+
+
+
+
+
+
 
 
 

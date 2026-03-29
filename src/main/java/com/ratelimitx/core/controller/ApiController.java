@@ -1,5 +1,11 @@
 package com.ratelimitx.core.controller;
 
+import com.ratelimitx.core.entity.User;
+import com.ratelimitx.core.model.RateLimitResult;
+import com.ratelimitx.core.repository.UserRepository;
+import com.ratelimitx.core.service.MetricsService;
+import com.ratelimitx.core.service.PrometheusMetricsService;
+import com.ratelimitx.core.service.ResilientRateLimiter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -8,24 +14,22 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.ratelimitx.core.entity.User;
-import com.ratelimitx.core.model.RateLimitResult;
-import com.ratelimitx.core.repository.UserRepository;
-import com.ratelimitx.core.service.MetricsService;
-import com.ratelimitx.core.service.ResilientRateLimiter;
+
 
 /**
- * Main API Controller - Now with JWT Authentication!
+ * Main API Controller - Now with JWT Authentication and Prometheus Metrics!
  * 
  * User ID is extracted from JWT token, not from header.
  * Rate limit is based on user's tier (USER, PREMIUM, ADMIN).
+ * All requests are recorded in Prometheus metrics.
  */
 @RestController
 @RequestMapping("/api")
 public class ApiController {
-    
+
     private final ResilientRateLimiter resilientRateLimiter;
     private final MetricsService metricsService;
+    private final PrometheusMetricsService prometheusMetricsService;
     private final UserRepository userRepository;
     
     @Value("${ratelimit.algorithm}")
@@ -34,10 +38,12 @@ public class ApiController {
     public ApiController(
             ResilientRateLimiter resilientRateLimiter,
             MetricsService metricsService,
+            PrometheusMetricsService prometheusMetricsService,
             UserRepository userRepository
     ) {
         this.resilientRateLimiter = resilientRateLimiter;
         this.metricsService = metricsService;
+        this.prometheusMetricsService = prometheusMetricsService;
         this.userRepository = userRepository;
     }
     
@@ -58,7 +64,19 @@ public class ApiController {
         
         long responseTime = System.currentTimeMillis() - startTime;
         
-        // Record metrics (with try-catch in case Redis is down)
+        // Record metrics in Prometheus (non-critical, continue on error)
+        try {
+            prometheusMetricsService.recordRequest(userId, result.isAllowed(), algorithm);
+            prometheusMetricsService.recordCheckDuration(responseTime, algorithm, result.isAllowed());
+            
+            if (!result.isAllowed()) {
+                prometheusMetricsService.recordDenied(userId);
+            }
+        } catch (Exception e) {
+            // Prometheus metrics are non-critical
+        }
+        
+        // Record legacy metrics
         try {
             metricsService.recordRequest(userId, result.isAllowed(), responseTime);
         } catch (Exception e) {
