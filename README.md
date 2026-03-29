@@ -1,12 +1,15 @@
 # 🚦 RateLimitX
 
-A production-grade distributed rate limiting service built with Java Spring Boot, Redis, and PostgreSQL. Features JWT authentication, multiple rate limiting algorithms, Circuit Breaker pattern for fault tolerance, Docker containerization, and comprehensive Gatling load testing.
+A production-grade distributed rate limiting service built with Java Spring Boot, Redis, PostgreSQL, and Kafka. Features JWT authentication, multiple rate limiting algorithms, Circuit Breaker pattern for fault tolerance, event-driven analytics with Kafka, and real-time monitoring with Prometheus and Grafana.
 
 ![Java](https://img.shields.io/badge/Java-17+-orange?style=flat-square&logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-green?style=flat-square&logo=springboot)
 ![Spring Security](https://img.shields.io/badge/Spring%20Security-6.x-green?style=flat-square&logo=springsecurity)
 ![Redis](https://img.shields.io/badge/Redis-7.x-red?style=flat-square&logo=redis)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?style=flat-square&logo=postgresql)
+![Kafka](https://img.shields.io/badge/Kafka-7.5-black?style=flat-square&logo=apachekafka)
+![Prometheus](https://img.shields.io/badge/Prometheus-2.47-orange?style=flat-square&logo=prometheus)
+![Grafana](https://img.shields.io/badge/Grafana-10.1-orange?style=flat-square&logo=grafana)
 ![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=flat-square&logo=docker)
 ![JWT](https://img.shields.io/badge/JWT-Auth-purple?style=flat-square)
 ![Gatling](https://img.shields.io/badge/Gatling-Tested-purple?style=flat-square)
@@ -19,6 +22,8 @@ A production-grade distributed rate limiting service built with Java Spring Boot
 - [Architecture](#-architecture)
 - [Authentication](#-authentication)
 - [Algorithms](#-algorithms)
+- [Event Streaming](#-event-streaming)
+- [Monitoring](#-monitoring)
 - [Circuit Breaker](#-circuit-breaker)
 - [Tech Stack](#-tech-stack)
 - [Getting Started](#-getting-started)
@@ -31,7 +36,7 @@ A production-grade distributed rate limiting service built with Java Spring Boot
 
 ## 🎯 Overview
 
-RateLimitX is a distributed rate limiting service designed to protect APIs from abuse and ensure fair resource allocation. It features JWT-based authentication with role-based rate limits, multiple rate limiting algorithms that can be switched at runtime, a Circuit Breaker pattern for fault tolerance, and is fully containerized with Docker.
+RateLimitX is a distributed rate limiting service designed to protect APIs from abuse and ensure fair resource allocation. It features JWT-based authentication with role-based rate limits, multiple rate limiting algorithms that can be switched at runtime, event-driven analytics with Apache Kafka, real-time monitoring with Prometheus and Grafana, a Circuit Breaker pattern for fault tolerance, and is fully containerized with Docker.
 
 ### Why Rate Limiting?
 
@@ -46,8 +51,9 @@ RateLimitX is a distributed rate limiting service designed to protect APIs from 
 - ⚡ **p95 Latency: 11ms** — Validated through Gatling load testing
 - 🛡️ **99.9% Availability** — Circuit Breaker ensures service continuity
 - 👥 **Tiered Rate Limits** — USER (10), PREMIUM (100), ADMIN (1000) requests/min
-- 🐳 **One-Command Deployment** — Docker Compose for instant setup
-- 📊 **Real-Time Metrics** — Track requests, denial rates, response times
+- 📨 **Event-Driven Analytics** — Apache Kafka for async event streaming
+- 📊 **Real-Time Dashboards** — Prometheus metrics + Grafana visualizations
+- 🐳 **One-Command Deployment** — Docker Compose orchestrating 7 services
 
 ---
 
@@ -67,6 +73,20 @@ RateLimitX is a distributed rate limiting service designed to protect APIs from 
 - ✅ **Atomic Redis Operations** — Lua scripts prevent race conditions
 - ✅ **Runtime Algorithm Switching** — Change algorithms without restart
 
+### Event Streaming (Kafka)
+- ✅ **Async Event Publishing** — Non-blocking event streaming
+- ✅ **Real-Time Analytics** — Track usage patterns as they happen
+- ✅ **Decoupled Consumers** — Independent analytics and alerting pipelines
+- ✅ **Event Replay** — Rebuild analytics from stored events
+- ✅ **Partitioned Topics** — Parallel processing for scalability
+
+### Monitoring & Observability
+- ✅ **Prometheus Metrics** — Time-series metrics collection
+- ✅ **Grafana Dashboards** — Real-time visualization
+- ✅ **Custom Metrics** — Request rates, latencies, denial rates
+- ✅ **JVM Monitoring** — Memory, CPU, thread metrics
+- ✅ **Auto-Provisioned** — Dashboards ready on startup
+
 ### Reliability Features
 - ✅ **Circuit Breaker Pattern** — Automatic fallback during Redis failures
 - ✅ **Local Rate Limiter Fallback** — In-memory rate limiting when Redis is down
@@ -75,10 +95,9 @@ RateLimitX is a distributed rate limiting service designed to protect APIs from 
 
 ### Operations Features
 - ✅ **Docker & Docker Compose** — Production-ready containerization
-- ✅ **PostgreSQL Integration** — Persistent user management
+- ✅ **7 Orchestrated Services** — App, PostgreSQL, Redis, Kafka, Zookeeper, Prometheus, Grafana
 - ✅ **Gatling Load Testing** — Comprehensive performance validation
-- ✅ **Real-Time Metrics** — Hourly and daily statistics tracking
-- ✅ **Admin Dashboard** — Monitor users, algorithms, and system health
+- ✅ **Kafka UI** — Visual topic and message inspection
 
 ### API Headers (RFC 6585 Compliant)
 ```
@@ -113,7 +132,7 @@ flowchart TB
         AUTH[Auth Controller]
         API[API Controller]
         ADMIN[Admin Controller]
-        METRICS[Metrics Controller]
+        ANALYTICS[Analytics Controller]
     end
 
     subgraph RateLimit["🚦 Rate Limiting"]
@@ -123,6 +142,17 @@ flowchart TB
         SW[Sliding Window]
         FW[Fixed Window]
         LOCAL[Local Fallback]
+    end
+
+    subgraph EventStream["📨 Event Streaming"]
+        PRODUCER[Kafka Producer]
+        KAFKA[(Apache Kafka)]
+        CONSUMER[Analytics Consumer]
+    end
+
+    subgraph Monitoring["📊 Monitoring"]
+        PROM[(Prometheus)]
+        GRAF[Grafana]
     end
 
     subgraph Data["💾 Data Layer"]
@@ -136,132 +166,210 @@ flowchart TB
     
     AUTH --> PG
     API --> RL
-    ADMIN --> RL
-    METRICS --> REDIS
+    API --> PRODUCER
     
     RL --> CB
     CB -->|Closed| TB & SW & FW
     CB -->|Open| LOCAL
     TB & SW & FW --> REDIS
+    
+    PRODUCER --> KAFKA
+    KAFKA --> CONSUMER
+    
+    App -->|/actuator/prometheus| PROM
+    PROM --> GRAF
 
     style JWT fill:#ff9800
     style CB fill:#ffeb3b
-    style PG fill:#4caf50
-    style REDIS fill:#f44336
+    style KAFKA fill:#231f20
+    style PROM fill:#e6522c
+    style GRAF fill:#f46800
 ```
 
-### Request Flow
+### Complete Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                              CLIENT REQUEST                                          │
+│                     Authorization: Bearer <JWT Token>                                │
+└─────────────────────────────────┬───────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                           SECURITY LAYER                                             │
+│  ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────────┐  │
+│  │   JWT Auth Filter   │───▶│   Spring Security   │───▶│   Role Validator        │  │
+│  │                     │    │                     │    │                         │  │
+│  │ • Extract Token     │    │ • Authenticate      │    │ • USER: /api/**         │  │
+│  │ • Validate Signature│    │ • Load UserDetails  │    │ • ADMIN: /admin/**      │  │
+│  │ • Check Expiration  │    │ • Set Context       │    │ • Public: /auth/**, /actuator/** │
+│  └─────────────────────┘    └─────────────────────┘    └─────────────────────────┘  │
+└─────────────────────────────────┬───────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                          CONTROLLER LAYER                                            │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌──────────────┐  │
+│  │    Auth    │  │    API     │  │   Admin    │  │  Metrics   │  │  Analytics   │  │
+│  │ Controller │  │ Controller │  │ Controller │  │ Controller │  │  Controller  │  │
+│  │            │  │            │  │            │  │            │  │              │  │
+│  │ • register │  │ • data     │  │ • health   │  │ • summary  │  │ • summary    │  │
+│  │ • login    │  │ • status   │  │ • stats    │  │ • hourly   │  │ • user/{id}  │  │
+│  │ • me       │  │            │  │ • circuit  │  │ • daily    │  │ • top-denied │  │
+│  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └─────┬──────┘  └──────┬───────┘  │
+└────────┼───────────────┼───────────────┼───────────────┼────────────────┼──────────┘
+         │               │               │               │                │
+         │               ▼               │               │                │
+         │  ┌────────────────────────────┴───────────────┴────────────────┴──────────┐
+         │  │                      RATE LIMITING LAYER                               │
+         │  │  ┌──────────────────────────────────────────────────────────────────┐ │
+         │  │  │                    RESILIENT RATE LIMITER                        │ │
+         │  │  │  ┌────────────────────────────────────────────────────────────┐  │ │
+         │  │  │  │                    CIRCUIT BREAKER                          │  │ │
+         │  │  │  │          CLOSED ◄──► OPEN ◄──► HALF_OPEN                   │  │ │
+         │  │  │  └────────────────────────┬───────────────────────────────────┘  │ │
+         │  │  │                           │                                      │ │
+         │  │  │               ┌───────────┴───────────┐                          │ │
+         │  │  │               ▼                       ▼                          │ │
+         │  │  │        ┌─────────────┐        ┌─────────────┐                    │ │
+         │  │  │        │   PRIMARY   │        │  FALLBACK   │                    │ │
+         │  │  │        │   (Redis)   │        │  (Memory)   │                    │ │
+         │  │  │        │             │        │             │                    │ │
+         │  │  │        │• Token Bucket│       │• Local Rate │                    │ │
+         │  │  │        │• Sliding Win │       │  Limiter    │                    │ │
+         │  │  │        │• Fixed Window│       │             │                    │ │
+         │  │  │        └──────┬──────┘        └─────────────┘                    │ │
+         │  │  └───────────────┼──────────────────────────────────────────────────┘ │
+         │  └──────────────────┼──────────────────────────────────────────────────┘  │
+         │                     │                                                      │
+         │                     │                                                      │
+         │                     │         ┌────────────────────────────────────────┐  │
+         │                     │         │         EVENT STREAMING               │  │
+         │                     │         │                                        │  │
+         │                     │         │  API Controller                        │  │
+         │                     │         │       │                                │  │
+         │                     │         │       ▼ (async)                        │  │
+         │                     │         │  ┌─────────────┐                       │  │
+         │                     │         │  │   Kafka     │                       │  │
+         │                     │         │  │  Producer   │                       │  │
+         │                     │         │  └──────┬──────┘                       │  │
+         │                     │         │         │                              │  │
+         │                     │         │         ▼                              │  │
+         │                     │         │  ┌─────────────────────────────────┐   │  │
+         │                     │         │  │         KAFKA BROKER            │   │  │
+         │                     │         │  │                                 │   │  │
+         │                     │         │  │  Topic: rate-limit-events       │   │  │
+         │                     │         │  │  ├── Partition 0                │   │  │
+         │                     │         │  │  ├── Partition 1                │   │  │
+         │                     │         │  │  └── Partition 2                │   │  │
+         │                     │         │  └─────────────┬───────────────────┘   │  │
+         │                     │         │                │                       │  │
+         │                     │         │                ▼                       │  │
+         │                     │         │  ┌─────────────────────────────────┐   │  │
+         │                     │         │  │     Analytics Consumer          │   │  │
+         │                     │         │  │                                 │   │  │
+         │                     │         │  │  • Count requests               │   │  │
+         │                     │         │  │  • Track denial rates           │   │  │
+         │                     │         │  │  • Detect abuse patterns        │   │  │
+         │                     │         │  └─────────────────────────────────┘   │  │
+         │                     │         │                                        │  │
+         │                     │         └────────────────────────────────────────┘  │
+         │                     │                                                      │
+         ▼                     ▼                                                      │
+┌─────────────────┐  ┌─────────────────┐                                             │
+│   POSTGRESQL    │  │      REDIS      │                                             │
+│   (Port 5432)   │  │   (Port 6379)   │                                             │
+│                 │  │                 │                                             │
+│  ┌───────────┐  │  │  ┌───────────┐  │                                             │
+│  │  users    │  │  │  │Rate Limits│  │                                             │
+│  │  table    │  │  │  │           │  │                                             │
+│  │           │  │  │  │ rate:*    │  │                                             │
+│  │ • id      │  │  │  │ bucket:*  │  │                                             │
+│  │ • username│  │  │  │ sliding:* │  │                                             │
+│  │ • password│  │  │  │           │  │                                             │
+│  │ • role    │  │  │  │ Lua Scripts│ │                                             │
+│  │ • rateLimit│ │  │  └───────────┘  │                                             │
+│  └───────────┘  │  │                 │                                             │
+└─────────────────┘  └─────────────────┘                                             │
+                                                                                      │
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│                            MONITORING STACK                                         │
+│                                                                                     │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐   │
+│  │                                                                              │   │
+│  │   Spring Boot App                                                            │   │
+│  │   /actuator/prometheus  ◀─── Scrapes every 15s ───┐                         │   │
+│  │                                                    │                         │   │
+│  │   Metrics exposed:                                 │                         │   │
+│  │   • http_server_requests_seconds                   │                         │   │
+│  │   • ratelimit_requests_total                       │                         │   │
+│  │   • ratelimit_denied_total                         │                         │   │
+│  │   • jvm_memory_used_bytes                          │                         │   │
+│  │   • circuit_breaker_state                          │                         │   │
+│  │                                                    │                         │   │
+│  └────────────────────────────────────────────────────┼─────────────────────────┘   │
+│                                                       │                             │
+│                                             ┌─────────┴─────────┐                   │
+│                                             │    PROMETHEUS     │                   │
+│                                             │    (Port 9090)    │                   │
+│                                             │                   │                   │
+│                                             │ • Scrapes metrics │                   │
+│                                             │ • Stores time     │                   │
+│                                             │   series data     │                   │
+│                                             │ • PromQL queries  │                   │
+│                                             └─────────┬─────────┘                   │
+│                                                       │                             │
+│                                                       │ Queries                     │
+│                                                       ▼                             │
+│                                             ┌─────────────────────┐                 │
+│                                             │      GRAFANA        │                 │
+│                                             │    (Port 3000)      │                 │
+│                                             │                     │                 │
+│                                             │ • Auto-provisioned  │                 │
+│                                             │   dashboards        │                 │
+│                                             │ • Real-time graphs  │                 │
+│                                             │ • Alerting          │                 │
+│                                             └─────────────────────┘                 │
+│                                                                                     │
+└─────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Request Flow with Events
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant J as JWT Filter
-    participant S as Spring Security
-    participant R as Rate Limiter
-    participant CB as Circuit Breaker
+    participant API as API Controller
+    participant RL as Rate Limiter
     participant Redis
-    participant PG as PostgreSQL
-    participant API as Controller
+    participant K as Kafka
+    participant AC as Analytics Consumer
+    participant P as Prometheus
+    participant G as Grafana
 
     C->>J: Request + Bearer Token
-    J->>J: Extract & Validate JWT
-    J->>PG: Load User Details
-    PG-->>J: User + Role + Rate Limit
-    J->>S: Set Authentication
-    S->>S: Check Authorization (Role)
-    S->>R: Forward Request
-    R->>CB: Check Rate Limit (User's Limit)
+    J->>J: Validate JWT
+    J->>API: Authenticated Request
+    API->>RL: Check Rate Limit
+    RL->>Redis: Get/Update Counter
+    Redis-->>RL: Result
+    RL-->>API: Allowed/Denied
     
-    alt Circuit CLOSED
-        CB->>Redis: Check/Update Limit
-        Redis-->>CB: Result
-    else Circuit OPEN
-        CB->>CB: Use Local Fallback
+    par Async Event Publishing
+        API->>K: Publish RateLimitEvent
+        K->>AC: Consume Event
+        AC->>AC: Update Analytics
     end
     
-    CB-->>R: Allowed/Denied
-    
-    alt Allowed
-        R->>API: Process Request
-        API-->>C: 200 OK + Data
-    else Denied
-        R-->>C: 429 Too Many Requests
+    par Metrics Collection
+        P->>API: Scrape /actuator/prometheus
+        API-->>P: Metrics
+        G->>P: Query Metrics
+        P-->>G: Time Series Data
     end
-```
-
-### Detailed Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                              CLIENT REQUEST                                      │
-│                     Authorization: Bearer <JWT Token>                            │
-└─────────────────────────────────┬───────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                           SECURITY LAYER                                         │
-│  ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────────┐  │
-│  │   JWT Auth Filter   │───▶│   Spring Security   │───▶│   Role Validator    │  │
-│  │                     │    │                     │    │                     │  │
-│  │ • Extract Token     │    │ • Authenticate      │    │ • USER: /api/**     │  │
-│  │ • Validate Signature│    │ • Load UserDetails  │    │ • ADMIN: /admin/**  │  │
-│  │ • Check Expiration  │    │ • Set Context       │    │ • Public: /auth/**  │  │
-│  └─────────────────────┘    └─────────────────────┘    └─────────────────────┘  │
-└─────────────────────────────────┬───────────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                          CONTROLLER LAYER                                        │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
-│  │     Auth     │  │     API      │  │    Admin     │  │      Metrics         │ │
-│  │  Controller  │  │  Controller  │  │  Controller  │  │     Controller       │ │
-│  │              │  │              │  │              │  │                      │ │
-│  │ • register   │  │ • data       │  │ • health     │  │ • summary            │ │
-│  │ • login      │  │ • status     │  │ • stats      │  │ • hourly/daily       │ │
-│  │ • me         │  │              │  │ • circuit    │  │ • user/{id}          │ │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘ │
-└─────────┼─────────────────┼─────────────────┼─────────────────────┼─────────────┘
-          │                 │                 │                     │
-          │                 ▼                 │                     │
-          │  ┌──────────────────────────────────────────────────────┼─────────────┐
-          │  │              RATE LIMITING LAYER                     │             │
-          │  │  ┌────────────────────────────────────────────────┐  │             │
-          │  │  │           RESILIENT RATE LIMITER               │  │             │
-          │  │  │  ┌──────────────────────────────────────────┐  │  │             │
-          │  │  │  │            CIRCUIT BREAKER                │  │  │             │
-          │  │  │  │    CLOSED ◄──► OPEN ◄──► HALF_OPEN       │  │  │             │
-          │  │  │  └──────────────────┬───────────────────────┘  │  │             │
-          │  │  │                     │                          │  │             │
-          │  │  │         ┌───────────┴───────────┐              │  │             │
-          │  │  │         ▼                       ▼              │  │             │
-          │  │  │  ┌─────────────┐        ┌─────────────┐        │  │             │
-          │  │  │  │   PRIMARY   │        │  FALLBACK   │        │  │             │
-          │  │  │  │   (Redis)   │        │  (Memory)   │        │  │             │
-          │  │  │  │             │        │             │        │  │             │
-          │  │  │  │• Token Bucket│       │• Local Rate │        │  │             │
-          │  │  │  │• Sliding Win │       │  Limiter    │        │  │             │
-          │  │  │  │• Fixed Window│       │             │        │  │             │
-          │  │  │  └──────┬──────┘        └─────────────┘        │  │             │
-          │  │  └─────────┼──────────────────────────────────────┘  │             │
-          │  └────────────┼─────────────────────────────────────────┘             │
-          │               │                                                       │
-          ▼               ▼                                                       ▼
-┌─────────────────┐  ┌─────────────────────────────────────────┐  ┌───────────────┐
-│   POSTGRESQL    │  │                 REDIS                   │  │    REDIS      │
-│   (Port 5432)   │  │              (Port 6379)                │  │   (Metrics)   │
-│                 │  │                                         │  │               │
-│  ┌───────────┐  │  │  ┌─────────────┐  ┌─────────────────┐  │  │  metrics:*    │
-│  │  users    │  │  │  │ Rate Limits │  │  User Limits    │  │  │  • hourly     │
-│  │  table    │  │  │  │             │  │                 │  │  │  • daily      │
-│  │           │  │  │  │ rate:*      │  │  user-limits    │  │  │  • per-user   │
-│  │ • id      │  │  │  │ bucket:*    │  │  (hash)         │  │  │               │
-│  │ • username│  │  │  │ sliding:*   │  │                 │  │  └───────────────┘
-│  │ • email   │  │  │  │             │  │                 │  │
-│  │ • password│  │  │  │ Lua Scripts │  │                 │  │
-│  │ • role    │  │  │  │ (Atomic)    │  │                 │  │
-│  │ • rateLimit│ │  │  └─────────────┘  └─────────────────┘  │
-│  └───────────┘  │  │                                         │
-└─────────────────┘  └─────────────────────────────────────────┘
+    
+    API-->>C: Response + Headers
 ```
 
 ---
@@ -269,39 +377,6 @@ sequenceDiagram
 ## 🔐 Authentication
 
 RateLimitX uses JWT (JSON Web Token) for stateless authentication with role-based rate limiting.
-
-### Authentication Flow
-
-```mermaid
-sequenceDiagram
-    participant U as User
-    participant A as Auth Controller
-    participant DB as PostgreSQL
-    participant J as JWT Util
-
-    Note over U,J: Registration
-    U->>A: POST /auth/register
-    A->>A: Validate Input
-    A->>A: Hash Password (BCrypt)
-    A->>DB: Save User
-    DB-->>A: User Created
-    A-->>U: 201 Created
-
-    Note over U,J: Login
-    U->>A: POST /auth/login
-    A->>DB: Find User
-    A->>A: Verify Password
-    A->>J: Generate JWT
-    J-->>A: Token (24h expiry)
-    A-->>U: { token, role, rateLimit }
-
-    Note over U,J: Authenticated Request
-    U->>A: GET /api/data + Bearer Token
-    A->>J: Validate Token
-    J->>DB: Load User
-    A->>A: Apply User's Rate Limit
-    A-->>U: Response + Rate Limit Headers
-```
 
 ### User Roles & Rate Limits
 
@@ -346,12 +421,6 @@ eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiUk9MRV9VU0VSIiwicmF0ZUxpbWl0IjoxMCwic3ViIjoicnV
 ### 1. Fixed Window Counter
 
 **How it works**: Counts requests in fixed time windows (e.g., per minute).
-```
-Minute 1              Minute 2              Minute 3
-├────────────────────┼────────────────────┼────────────────────┤
-│ ██████████ 10 req  │ ██████████ 10 req  │ ██████████ 10 req  │
-│ (resets at end)    │ (resets at end)    │ (resets at end)    │
-```
 
 | Pros | Cons |
 |------|------|
@@ -361,22 +430,9 @@ Minute 1              Minute 2              Minute 3
 
 **Best for**: Simple APIs, internal services
 
----
-
 ### 2. Token Bucket
 
 **How it works**: Tokens are added at a fixed rate. Each request consumes a token.
-```
-Bucket Capacity: 10 tokens
-Refill Rate: 1 token/second
-
-[🪙🪙🪙🪙🪙🪙🪙⚪⚪⚪]  7 tokens available
-         │
-    Request (costs 1 token)
-         │
-         ▼
-[🪙🪙🪙🪙🪙🪙⚪⚪⚪⚪]  6 tokens remaining
-```
 
 | Pros | Cons |
 |------|------|
@@ -386,21 +442,9 @@ Refill Rate: 1 token/second
 
 **Best for**: Public APIs, services needing burst capacity
 
----
-
 ### 3. Sliding Window Counter
 
 **How it works**: Combines current and previous window with weighted average.
-```
-Current time: 45 seconds into current window
-
-Previous Window    Current Window
-│    8 requests    │    4 requests    │
-│      (25%)       │     (100%)       │
-└──────────────────┴──────────────────┘
-
-Weighted count = (8 × 0.25) + (4 × 1.0) = 6 requests
-```
 
 | Pros | Cons |
 |------|------|
@@ -409,6 +453,124 @@ Weighted count = (8 × 0.25) + (4 × 1.0) = 6 requests
 | Smooth experience | More memory usage |
 
 **Best for**: High-accuracy APIs, premium tier rate limiting
+
+---
+
+## 📨 Event Streaming
+
+RateLimitX uses Apache Kafka for event-driven analytics, decoupling rate limit decisions from analytics processing.
+
+### Why Kafka?
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    WITHOUT KAFKA                                │
+│                                                                 │
+│   Request ──▶ Rate Limit ──▶ Log to DB (SYNC) ──▶ Response     │
+│                                    │                            │
+│                                    └── Slows down response!     │
+│                                                                 │
+├─────────────────────────────────────────────────────────────────┤
+│                    WITH KAFKA                                   │
+│                                                                 │
+│   Request ──▶ Rate Limit ──▶ Response (FAST!)                  │
+│                    │                                            │
+│                    └──▶ Kafka (ASYNC) ──▶ Analytics Consumer   │
+│                                                                 │
+│   Benefits:                                                     │
+│   ✅ API response is faster (no sync writes)                   │
+│   ✅ Analytics can process at its own pace                     │
+│   ✅ If consumer crashes, events are NOT lost                  │
+│   ✅ Can replay events to rebuild analytics                    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Event Structure
+
+```json
+{
+  "eventId": "550e8400-e29b-41d4-a716-446655440000",
+  "userId": "rugved",
+  "userRole": "USER",
+  "allowed": true,
+  "limit": 10,
+  "remaining": 7,
+  "algorithm": "sliding-window",
+  "responseTimeMs": 12,
+  "timestamp": "2024-01-27T10:30:00Z",
+  "endpoint": "/api/data"
+}
+```
+
+### Kafka Topics
+
+| Topic | Partitions | Purpose |
+|-------|------------|---------|
+| `rate-limit-events` | 3 | All rate limit decisions |
+| `rate-limit-alerts` | 1 | Threshold breach alerts |
+
+---
+
+## 📊 Monitoring
+
+RateLimitX includes a complete observability stack with Prometheus and Grafana.
+
+### Monitoring Stack
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    GRAFANA DASHBOARD                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────┬─────────────┬─────────────┬─────────────┐     │
+│  │   TOTAL     │   ALLOWED   │   DENIED    │  SUCCESS %  │     │
+│  │   1,234     │   1,180     │     54      │   95.6%     │     │
+│  └─────────────┴─────────────┴─────────────┴─────────────┘     │
+│                                                                 │
+│  ┌─────────────────────────────────────────────────────────┐   │
+│  │  REQUESTS PER SECOND                                     │   │
+│  │  ████████████████████████████████████████████████████   │   │
+│  └─────────────────────────────────────────────────────────┘   │
+│                                                                 │
+│  ┌───────────────────────┐  ┌───────────────────────────────┐  │
+│  │  LATENCY (ms)         │  │  CIRCUIT BREAKER              │  │
+│  │                       │  │                               │  │
+│  │  p50: 6ms             │  │  State: CLOSED ✅             │  │
+│  │  p95: 11ms            │  │  Failures: 0                  │  │
+│  │  p99: 30ms            │  │                               │  │
+│  └───────────────────────┘  └───────────────────────────────┘  │
+│                                                                 │
+│  ┌───────────────────────┐  ┌───────────────────────────────┐  │
+│  │  JVM MEMORY           │  │  ALGORITHM USAGE              │  │
+│  │  ████████████████     │  │                               │  │
+│  │  Used: 256MB          │  │  🔵 Sliding Window: 78%       │  │
+│  │  Max: 512MB           │  │  🟢 Token Bucket: 15%         │  │
+│  └───────────────────────┘  │  🟡 Fixed Window: 7%          │  │
+│                             └───────────────────────────────┘  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Metrics Exposed
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `http_server_requests_seconds` | Histogram | HTTP request latencies |
+| `ratelimit_requests_total` | Counter | Total rate limit checks |
+| `ratelimit_denied_total` | Counter | Denied requests |
+| `circuit_breaker_state` | Gauge | Circuit breaker state (0=closed, 1=open) |
+| `jvm_memory_used_bytes` | Gauge | JVM memory usage |
+| `jvm_threads_live` | Gauge | Active threads |
+
+### Access URLs
+
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| **Application** | http://localhost:8080 | - |
+| **Prometheus** | http://localhost:9090 | - |
+| **Grafana** | http://localhost:3000 | admin / admin |
+| **Kafka UI** | http://localhost:8081 | - |
 
 ---
 
@@ -444,22 +606,6 @@ stateDiagram-v2
 | Timeout Duration | 30s | Time before testing recovery |
 | Fallback Strategy | Local Rate Limiter | In-memory when Redis is down |
 
-### Monitoring
-```bash
-# Check circuit breaker status
-curl http://localhost:8080/admin/circuit \
-  -H "Authorization: Bearer <admin-token>"
-
-# Response
-{
-  "state": "CLOSED",
-  "failureCount": 0,
-  "failureThreshold": 3,
-  "isAllowingRequests": true,
-  "currentMode": "sliding-window"
-}
-```
-
 ---
 
 ## 🛠 Tech Stack
@@ -472,6 +618,9 @@ curl http://localhost:8080/admin/circuit \
 | **Authentication** | JWT (jjwt 0.12.3) | Stateless token-based auth |
 | **Database** | PostgreSQL 16 | User management & persistence |
 | **Cache** | Redis 7.x | Distributed rate limit storage |
+| **Messaging** | Apache Kafka 7.5 | Event streaming |
+| **Metrics** | Micrometer + Prometheus | Metrics collection |
+| **Visualization** | Grafana 10.1 | Dashboards |
 | **ORM** | Spring Data JPA | Database operations |
 | **Scripting** | Lua | Atomic Redis operations |
 | **Containerization** | Docker & Docker Compose | Deployment |
@@ -492,49 +641,19 @@ curl http://localhost:8080/admin/circuit \
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/ratelimitx.git
-cd ratelimitx
+git clone https://github.com/Rugved-142/RateLimitX.git
+cd RateLimitX
 
-# Start everything with one command
+# Start all 7 services with one command
 docker-compose up --build
 
-# Verify it's working
-curl http://localhost:8080/admin/health
-```
+# Wait for services to start (about 60 seconds)
 
-### Local Development
-
-**1. Start PostgreSQL and Redis**
-```bash
-# Using Docker for databases only
-docker run -d --name postgres -p 5432:5432 \
-  -e POSTGRES_DB=ratelimitx \
-  -e POSTGRES_USER=ratelimitx \
-  -e POSTGRES_PASSWORD=ratelimitx123 \
-  postgres:16-alpine
-
-docker run -d --name redis -p 6379:6379 redis:7-alpine
-```
-
-**2. Run the application**
-```bash
-./mvnw spring-boot:run
-```
-
-**3. Test the endpoints**
-```bash
-# Health check
-curl http://localhost:8080/admin/health
-
-# Register a user
-curl -X POST http://localhost:8080/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"testuser","email":"test@example.com","password":"password123"}'
-
-# Login
-curl -X POST http://localhost:8080/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"testuser","password":"password123"}'
+# Access the services
+curl http://localhost:8080/admin/health     # Application
+open http://localhost:3000                   # Grafana (admin/admin)
+open http://localhost:9090                   # Prometheus
+open http://localhost:8081                   # Kafka UI
 ```
 
 ---
@@ -544,23 +663,41 @@ curl -X POST http://localhost:8080/auth/login \
 ### Docker Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      DOCKER COMPOSE                             │
-│                                                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
-│  │  postgres   │  │    redis    │  │          app            │ │
-│  │  container  │  │  container  │  │       container         │ │
-│  │             │  │             │  │                         │ │
-│  │ Port: 5432  │  │ Port: 6379  │  │      Port: 8080         │ │
-│  │             │  │             │  │                         │ │
-│  │ healthcheck │  │ healthcheck │  │  depends_on: healthy    │ │
-│  └──────┬──────┘  └──────┬──────┘  └───────────┬─────────────┘ │
-│         │                │                     │               │
-│         └────────────────┴─────────────────────┘               │
-│                    ratelimitx-network                          │
-│                                                                 │
-│  Volumes: postgres-data, redis-data                            │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           DOCKER COMPOSE                                         │
+│                                                                                  │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────┐ │
+│  │ PostgreSQL│  │   Redis   │  │ Zookeeper │  │   Kafka   │  │   Kafka UI    │ │
+│  │   :5432   │  │   :6379   │  │   :2181   │  │   :9092   │  │    :8081      │ │
+│  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └─────┬─────┘  └───────────────┘ │
+│        │              │              │              │                           │
+│        └──────────────┴──────────────┴──────────────┘                           │
+│                              │                                                   │
+│                              ▼                                                   │
+│                    ┌─────────────────────┐                                      │
+│                    │   Spring Boot App   │                                      │
+│                    │       :8080         │                                      │
+│                    │                     │                                      │
+│                    │  /actuator/prometheus                                      │
+│                    └──────────┬──────────┘                                      │
+│                               │                                                  │
+│                               ▼                                                  │
+│                    ┌─────────────────────┐                                      │
+│                    │     Prometheus      │                                      │
+│                    │       :9090         │                                      │
+│                    └──────────┬──────────┘                                      │
+│                               │                                                  │
+│                               ▼                                                  │
+│                    ┌─────────────────────┐                                      │
+│                    │      Grafana        │                                      │
+│                    │       :3000         │                                      │
+│                    │   (admin/admin)     │                                      │
+│                    └─────────────────────┘                                      │
+│                                                                                  │
+│  Network: ratelimitx-network                                                    │
+│  Volumes: postgres-data, redis-data, prometheus-data, grafana-data             │
+│                                                                                  │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Docker Commands
@@ -584,7 +721,7 @@ docker-compose down -v
 # Enter containers
 docker exec -it ratelimitx-app sh
 docker exec -it ratelimitx-redis redis-cli
-docker exec -it ratelimitx-postgres psql -U ratelimitx -d ratelimitx
+docker exec -it ratelimitx-kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic rate-limit-events
 ```
 
 ---
@@ -601,17 +738,7 @@ Content-Type: application/json
 {
   "username": "rugved",
   "email": "rugved@example.com",
-  "password": "password123"
-}
-```
-
-**Response (201 Created):**
-```json
-{
-  "message": "User registered successfully",
-  "username": "rugved",
-  "role": "USER",
-  "rateLimit": 10
+  "password": "password"
 }
 ```
 
@@ -626,7 +753,7 @@ Content-Type: application/json
 }
 ```
 
-**Response (200 OK):**
+**Response:**
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiJ9...",
@@ -635,23 +762,6 @@ Content-Type: application/json
   "username": "rugved",
   "role": "USER",
   "rateLimit": 10
-}
-```
-
-#### Get Current User
-```http
-GET /auth/me
-Authorization: Bearer <token>
-```
-
-**Response (200 OK):**
-```json
-{
-  "username": "rugved",
-  "email": "rugved@example.com",
-  "role": "USER",
-  "rateLimit": 10,
-  "createdAt": "2024-01-27T10:30:00"
 }
 ```
 
@@ -674,91 +784,57 @@ X-Algorithm: sliding-window
 X-User-Role: USER
 ```
 
-**Response (200 OK):**
-```
-Success! Here's your data
+---
+
+### Analytics Endpoints (Kafka-based)
+
+#### Get Analytics Summary
+```http
+GET /analytics/summary
 ```
 
-**Response (429 Too Many Requests):**
+**Response:**
+```json
+{
+  "kafka": "UP",
+  "analytics": {
+    "totalEvents": 1234,
+    "allowedEvents": 1180,
+    "deniedEvents": 54,
+    "successRate": "95.62%",
+    "denialRate": "4.38%",
+    "avgResponseTimeMs": "8.45",
+    "uniqueUsers": 42,
+    "algorithmUsage": {
+      "sliding-window": 1100,
+      "token-bucket": 134
+    }
+  }
+}
 ```
-Rate limit exceeded. Retry after 45000ms
+
+#### Get User Analytics
+```http
+GET /analytics/user/{userId}
+```
+
+#### Get Top Denied Users
+```http
+GET /analytics/top-denied?limit=10
 ```
 
 ---
 
-### Admin Endpoints (ADMIN role required)
+### Monitoring Endpoints
 
-#### Health Check (Public)
+#### Prometheus Metrics
 ```http
-GET /admin/health
-```
-```json
-{
-  "redis": "UP",
-  "status": "HEALTHY",
-  "algorithm": "sliding-window"
-}
+GET /actuator/prometheus
 ```
 
-#### Circuit Breaker Status
+#### Health Check
 ```http
-GET /admin/circuit
-Authorization: Bearer <admin-token>
-```
-```json
-{
-  "state": "CLOSED",
-  "failureCount": 0,
-  "failureThreshold": 3,
-  "timeoutDurationMs": 30000,
-  "isAllowingRequests": true,
-  "currentMode": "sliding-window"
-}
-```
-
-#### System Stats
-```http
-GET /admin/stats
-Authorization: Bearer <admin-token>
-```
-```json
-{
-  "activeUsers": 42,
-  "totalActiveKeys": 156,
-  "activeAlgorithm": "sliding-window",
-  "uptimeSeconds": 3600,
-  "memoryUsedMB": 128,
-  "memoryMaxMB": 512
-}
-```
-
----
-
-### Metrics Endpoints
-
-#### Metrics Summary
-```http
-GET /metrics/summary
-Authorization: Bearer <token>
-```
-```json
-{
-  "currentHour": {
-    "totalRequests": 500,
-    "allowedRequests": 450,
-    "deniedRequests": 50,
-    "avgResponseTimeMs": "2.35",
-    "successRate": "90.00%"
-  },
-  "currentDay": {
-    "totalRequests": 5000,
-    "allowedRequests": 4500,
-    "deniedRequests": 500,
-    "successRate": "90.00%"
-  },
-  "hourlyDenialRate": "10.00%",
-  "requestsPerMinute": "8.33"
-}
+GET /actuator/health
 ```
 
 ---
@@ -796,21 +872,35 @@ open target/gatling/*/index.html
 ```
 RateLimitX/
 ├── Dockerfile                              # Multi-stage build
-├── docker-compose.yml                      # Container orchestration
+├── docker-compose.yml                      # 7 services orchestration
 ├── pom.xml                                 # Maven dependencies
+│
+├── prometheus/
+│   └── prometheus.yml                      # Prometheus configuration
+│
+├── grafana/
+│   ├── provisioning/
+│   │   ├── datasources/
+│   │   │   └── datasource.yml              # Prometheus datasource
+│   │   └── dashboards/
+│   │       └── dashboard.yml               # Dashboard provisioning
+│   └── dashboards/
+│       └── ratelimitx-dashboard.json       # Pre-built dashboard
 │
 ├── src/main/java/com/ratelimitx/core/
 │   ├── RateLimitXApplication.java          # Main entry point
 │   │
 │   ├── config/
 │   │   ├── RateLimitConfig.java            # Rate limit configuration
-│   │   └── RedisConfig.java                # Redis connection setup
+│   │   ├── RedisConfig.java                # Redis connection setup
+│   │   └── MetricsConfig.java              # Micrometer/Prometheus config
 │   │
 │   ├── controller/
 │   │   ├── ApiController.java              # Rate-limited API endpoint
 │   │   ├── AdminController.java            # Admin & monitoring
 │   │   ├── AuthController.java             # Authentication endpoints
-│   │   └── MetricsController.java          # Metrics endpoints
+│   │   ├── MetricsController.java          # Redis-based metrics
+│   │   └── AnalyticsController.java        # Kafka-based analytics
 │   │
 │   ├── dto/
 │   │   ├── AuthResponse.java               # Login response DTO
@@ -820,6 +910,14 @@ RateLimitX/
 │   ├── entity/
 │   │   ├── Role.java                       # User roles enum
 │   │   └── User.java                       # User JPA entity
+│   │
+│   ├── event/
+│   │   └── RateLimitEvent.java             # Kafka event model
+│   │
+│   ├── kafka/
+│   │   ├── KafkaConfig.java                # Kafka configuration
+│   │   ├── RateLimitEventProducer.java     # Async event publisher
+│   │   └── RateLimitEventConsumer.java     # Analytics consumer
 │   │
 │   ├── repository/
 │   │   └── UserRepository.java             # User database operations
@@ -843,7 +941,8 @@ RateLimitX/
 │       ├── TokenBucketService.java         # Token Bucket
 │       ├── SlidingWindowService.java       # Sliding Window
 │       ├── ResilientRateLimiter.java       # Circuit breaker integration
-│       └── MetricsService.java             # Metrics tracking
+│       ├── MetricsService.java             # Redis metrics tracking
+│       └── PrometheusMetricsService.java   # Prometheus metrics
 │
 ├── src/main/resources/
 │   └── application.properties              # Configuration
@@ -857,96 +956,48 @@ RateLimitX/
 ## 🧪 Quick Testing
 
 ### Complete Test Flow
+
 ```bash
-# 1. Start services
+# 1. Start all services
 docker-compose up -d
 
-# 2. Check health (public endpoint)
+# 2. Wait for services to be healthy (about 60 seconds)
+docker-compose ps
+
+# 3. Check application health
 curl http://localhost:8080/admin/health
 
-# 3. Register a user
+# 4. Register a user
 curl -X POST http://localhost:8080/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"username":"testuser","email":"test@example.com","password":"password123"}'
+  -d '{"username":"testuser","email":"test@example.com","password":"password"}'
 
-# 4. Login and get token
+# 5. Login and get token
 TOKEN=$(curl -s -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"testuser","password":"password123"}' | jq -r '.token')
+  -d '{"username":"testuser","password":"password"}' | jq -r '.token')
 
 echo "Token: $TOKEN"
 
-# 5. Access protected endpoint
-curl http://localhost:8080/api/data \
-  -H "Authorization: Bearer $TOKEN"
-
-# 6. Test rate limiting (send 12 requests, limit is 10)
-for i in {1..12}; do
-  echo "Request $i:"
+# 6. Make requests (generates Kafka events and Prometheus metrics)
+for i in {1..15}; do
   curl -s http://localhost:8080/api/data \
     -H "Authorization: Bearer $TOKEN"
   echo ""
 done
 
-# 7. Check your rate limit status
-curl http://localhost:8080/api/status \
-  -H "Authorization: Bearer $TOKEN"
+# 7. Check Kafka analytics
+curl http://localhost:8080/analytics/summary | jq
+
+# 8. Check Prometheus metrics
+curl http://localhost:8080/actuator/prometheus | grep ratelimit
+
+# 9. Open Grafana dashboard
+open http://localhost:3000  # Login: admin / admin
+
+# 10. Open Kafka UI to see events
+open http://localhost:8081
 ```
-
-### Circuit Breaker Test
-```bash
-# Check initial state
-curl http://localhost:8080/admin/health
-
-# Stop Redis
-docker stop ratelimitx-redis
-
-# Requests still work (fallback mode)
-curl http://localhost:8080/api/data \
-  -H "Authorization: Bearer $TOKEN"
-
-# Restart Redis
-docker start ratelimitx-redis
-```
-
----
-
-## 📊 Configuration
-
-### application.properties
-```properties
-# Server
-server.port=8080
-
-# PostgreSQL
-spring.datasource.url=jdbc:postgresql://localhost:5432/ratelimitx
-spring.datasource.username=ratelimitx
-spring.datasource.password=ratelimitx123
-
-# Redis
-spring.data.redis.host=localhost
-spring.data.redis.port=6379
-
-# JWT
-jwt.secret=your-secret-key-here
-jwt.expiration=86400000
-
-# Rate Limiting
-ratelimit.algorithm=sliding-window
-ratelimit.max-requests=10
-ratelimit.window-size-seconds=60
-```
-
----
-
-## 🎯 Use Cases
-
-| Use Case | Recommended Setup |
-|----------|-------------------|
-| **Public API** | Token Bucket, JWT auth, tiered limits |
-| **SaaS Application** | Sliding Window, USER/PREMIUM/ADMIN tiers |
-| **Internal Services** | Fixed Window, simple config |
-| **High-Traffic API** | Token Bucket with Redis cluster |
 
 ---
 
