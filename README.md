@@ -51,7 +51,8 @@ Redis is unavailable. The whole stack runs under Docker Compose.
 - **JWT authentication** — stateless tokens carrying the user's role and rate limit
 - **Tiered rate limits** — USER (10), PREMIUM (100), ADMIN (1000) requests/min by default
 - **Three Redis algorithms** — fixed window, token bucket, sliding window counter
-- **Circuit breaker fallback** — in-memory limiting while Redis is unreachable
+- **Circuit breaker fallback** — in-memory limiting while Redis is unreachable, with a single
+  recovery probe and failure counting restricted to Redis outages
 - **No default secrets** — the application refuses to start without a 32-byte `JWT_SECRET`
 - **Login throttling** — `/auth/login` and `/auth/register` capped per client IP
 - **Prometheus + Grafana** — metrics on a private management port, auto-provisioned dashboard
@@ -291,6 +292,7 @@ RateLimitX ships with a Prometheus and Grafana stack.
 | `ratelimit_requests_total` | Counter | Total rate limit checks |
 | `ratelimit_requests_denied` | Counter | Denied requests, tagged by algorithm |
 | `ratelimit_check_duration` | Timer | Rate limit check duration |
+| `app_circuitbreaker_state` | Gauge | Circuit breaker state: 0=CLOSED, 1=HALF_OPEN, 2=OPEN |
 | `jvm_memory_used_bytes` | Gauge | JVM memory usage |
 | `jvm_threads_current` | Gauge | Active threads |
 
@@ -353,14 +355,25 @@ stateDiagram-v2
     HALF_OPEN : Testing, try one request against Redis
 ```
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| Failure threshold | 3 | Consecutive failures before opening the circuit |
-| Timeout duration | 30s | Time before testing recovery |
-| Fallback | Local in-memory limiter | Used while the circuit is open |
+| Parameter | Property | Default |
+|-----------|----------|---------|
+| Failure threshold | `ratelimit.circuit-breaker.failure-threshold` | 3 |
+| Timeout before probing | `ratelimit.circuit-breaker.timeout` | 30s |
+| Fallback window | `ratelimit.fallback.window-size-ms` | 60000 |
+| Fallback counter eviction | `ratelimit.fallback.eviction-after-ms` | 300000 |
 
-Fallback limits are enforced per application instance, so N instances allow up to N x limit
-while the circuit is open.
+Behaviour worth knowing before relying on it:
+
+- **Only one probe runs at a time.** In HALF_OPEN a single request is allowed through to Redis;
+  every other request in that moment uses the fallback. Reopening the gate to all traffic at once
+  would send the full arriving load at a dependency that was failing seconds earlier.
+- **Only Redis connectivity and timeout failures open the circuit.** Any other exception
+  propagates to the caller rather than being counted and hidden behind the fallback, so a bug in
+  the limiter surfaces as an error instead of as a silent downgrade.
+- **Fallback limits are per instance.** N instances serving the fallback simultaneously admit up
+  to N x limit per window between them. During an outage the service keeps answering with an
+  approximate limit rather than failing; treat fallback numbers accordingly.
+- `app_circuitbreaker_state` reports the live state: 0 CLOSED, 1 HALF_OPEN, 2 OPEN.
 
 ---
 
@@ -421,6 +434,13 @@ http://127.0.0.1:3000 and Prometheus at http://127.0.0.1:9090.
 
 ```bash
 ./mvnw -B verify
+```
+
+For local debugging, the `dev` profile turns on SQL logging and debug logging for the rate
+limiting internals. It is never active by default:
+
+```bash
+SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
 ```
 
 ---
@@ -544,13 +564,16 @@ Authorization: Bearer <token>
 
 ### Metrics Endpoints
 
-`/metrics/**` requires an authenticated user and is backed by Redis counters.
+`/metrics/**` is backed by Redis counters and is **disabled by default**, because recording them
+costs roughly fourteen extra Redis commands on every request for numbers Micrometer already
+provides. These paths return 404 unless `metrics.legacy.enabled=true`. Prometheus metrics at
+`/actuator/prometheus` are unaffected by this setting.
 
 ```http
 GET /metrics/summary
 GET /metrics/hourly
 GET /metrics/daily
-GET /metrics/history?days=7
+GET /metrics/history?hours=24
 GET /metrics/user/{userId}
 ```
 

@@ -53,10 +53,10 @@ Records metrics from the request path:
 The `recordRequest` and `recordDenied` signatures take the algorithm rather than a user id: see
 [Metrics](#metrics) below.
 
-The dead `setCircuitBreakerState` and `setActiveUsers` methods have been removed along with the
-gauges they backed. Nothing ever called them, so `app_circuitbreaker_state` only ever reported
-`CLOSED`. The gauge is reinstated, bound to the real breaker state, in the circuit breaker work;
-until then the dashboard panel that reads it shows no data, which is accurate.
+The dead `setCircuitBreakerState` and `setActiveUsers` methods are gone. Nothing ever called
+them, so `app_circuitbreaker_state` only ever reported `CLOSED`. The gauge is now registered by
+`CircuitBreakerMetrics` and reads `CircuitBreaker.getState()` on every scrape, so there is no
+second copy of the state to drift out of date.
 
 #### `controller/ApiController.java`
 Calls `PrometheusMetricsService` for every rate limit decision with the user id, the
@@ -86,8 +86,7 @@ Panels:
 
 **Overview** — allowed vs denied requests, success rate gauge
 **Performance** — requests per second, p50/p95/p99 rate limit check latency
-**Rate limiting** — denied requests by algorithm, algorithm usage, circuit breaker state (shows
-no data until the gauge is wired to the breaker)
+**Rate limiting** — denied requests by algorithm, algorithm usage, circuit breaker state
 **JVM** — heap used vs max, process CPU usage, current vs peak threads
 
 ### Compose services
@@ -149,6 +148,7 @@ docker exec ratelimitx-app curl -s http://localhost:9091/actuator/prometheus | g
 | `ratelimit.requests.total` | `allowed`, `algorithm` | Rate limit decisions |
 | `ratelimit.requests.denied` | `algorithm` | Denied requests |
 | `ratelimit.check.duration` | `algorithm`, `result` | Rate limit check duration |
+| `app.circuitbreaker.state` | - | 0 CLOSED, 1 HALF_OPEN, 2 OPEN, read live from the breaker |
 
 Every tag has a small fixed set of values, so the number of time series is bounded regardless of
 how many users the service has. The `user_id` tag these metrics used to carry created one series
@@ -234,9 +234,9 @@ with `docker exec ratelimitx-grafana grafana-cli admin reset-admin-password <new
 
 ## Known gaps
 
-- The circuit breaker gauge was removed with the dead method that backed it, so its dashboard
-  panel shows no data until the gauge is bound to the real breaker state.
 - No Prometheus alert rules are defined.
+- The legacy Redis-backed counters behind `/metrics/**` are disabled by default
+  (`metrics.legacy.enabled=false`); the dashboard does not use them.
 - `management.endpoint.health.show-details=always` is safe only because the management port is
   unpublished. Publishing port 9091 would expose full health details without authentication.
 

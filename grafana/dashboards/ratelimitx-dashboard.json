@@ -496,7 +496,7 @@
           "refId": "A"
         }
       ],
-      "title": "Circuit Breaker State (not wired up yet)",
+      "title": "Circuit Breaker State",
       "type": "stat"
     },
     {

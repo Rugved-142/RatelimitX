@@ -8,14 +8,24 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 
-
-
-
+/**
+ * Redis-backed request counters, predating the Micrometer metrics.
+ *
+ * <p><strong>Disabled by default.</strong> {@link #recordRequest} issues roughly fourteen Redis
+ * commands per request — increments for the hour, the day and the user, plus three expiries — all
+ * on the request path, against a Redis that is already handling the rate limit check itself. The
+ * same counts are available from Micrometer at a fraction of the cost.
+ *
+ * <p>Enable with {@code metrics.legacy.enabled=true}, which also exposes {@code /metrics/**}.
+ * Micrometer and {@code /actuator/prometheus} are unaffected either way.
+ */
 @Service
+@ConditionalOnProperty(name = "metrics.legacy.enabled", havingValue = "true")
 public class MetricsService {
 
     @Autowired
