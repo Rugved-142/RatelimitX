@@ -1,9 +1,8 @@
 package com.ratelimitx.core.service;
 
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -11,122 +10,124 @@ import org.springframework.stereotype.Service;
 import com.ratelimitx.core.config.RateLimitConfig;
 import com.ratelimitx.core.model.RateLimitResult;
 
-import jakarta.annotation.PostConstruct;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+/**
+ * Sliding window counter.
+ *
+ * <p>Weights the previous window's count by how much of it still overlaps the trailing window, and
+ * adds the current window's count, which avoids the burst a fixed window allows across its
+ * boundary.
+ *
+ * <p>The three keys share a hash tag so a cluster keeps them on one node; see
+ * {@link RateLimitKeys}. Time comes from Redis, so instances cannot disagree about where the
+ * window boundary falls.
+ */
 @Service
 public class SlidingWindowService {
 
+    private static final String ALGORITHM = "sliding-window";
 
-    @Autowired
-    private StringRedisTemplate redisTemplate;
+    private final StringRedisTemplate redisTemplate;
+    private final RateLimitConfig config;
+    private final DefaultRedisScript<List> script;
 
-    @Autowired
-    @org.springframework.beans.factory.annotation.Qualifier("rateLimitConfig")
-    private RateLimitConfig config;
-
-    @SuppressWarnings("rawtypes")
-    private DefaultRedisScript<List> slidingWindowScript;
-
-    @PostConstruct
-    public void init(){
-        slidingWindowScript = new DefaultRedisScript<>();
-        slidingWindowScript.setScriptText(getLuaScript());
-        slidingWindowScript.setResultType(List.class);
+    public SlidingWindowService(StringRedisTemplate redisTemplate, RateLimitConfig config) {
+        this.redisTemplate = redisTemplate;
+        this.config = config;
+        this.script = new DefaultRedisScript<>(luaScript(), List.class);
     }
 
-    public RateLimitResult checkRateLimit(String userId){
+    /** Checks against the configured default limit and window. */
+    public RateLimitResult checkRateLimit(String userId) {
         return checkRateLimit(userId, config.getMaxRequests(), config.getWindowSizeSeconds());
     }
-    public RateLimitResult checkRateLimit(String userId, int maxRequests, int windowSeconds){
 
-        String keyPrefix = "sliding:"+userId;
-        long now = System.currentTimeMillis();
+    /** Checks against an explicit limit over the configured window. */
+    public RateLimitResult checkRateLimit(String userId, int maxRequests) {
+        return checkRateLimit(userId, maxRequests, config.getWindowSizeSeconds());
+    }
+
+    /**
+     * @param maxRequests requests allowed per window
+     * @param windowSeconds window length in <strong>seconds</strong>
+     */
+    public RateLimitResult checkRateLimit(String userId, int maxRequests, int windowSeconds) {
+        String prefix = RateLimitKeys.slidingWindowPrefix(userId);
 
         @SuppressWarnings("unchecked")
         List<Long> result = redisTemplate.execute(
-            slidingWindowScript,
-            Arrays.asList(keyPrefix),
-            String.valueOf(maxRequests),
-            String.valueOf(windowSeconds),
-            String.valueOf(now)
-        );
+                script,
+                Collections.singletonList(prefix),
+                String.valueOf(maxRequests),
+                String.valueOf(windowSeconds),
+                "1");
 
-        if(result == null){
-            return new RateLimitResult(false, windowSeconds, maxRequests, windowSeconds);
+        if (result == null) {
+            throw new RateLimitScriptException(ALGORITHM, prefix);
         }
 
-        boolean isAllowed= result.get(0) == 1;
-        int currentCount = result.get(1).intValue();
-        int remaining = Math.max(0, maxRequests - currentCount);
-        Long resetTime = result.get(2);
+        boolean allowed = result.get(0) == 1L;
+        int weightedCount = result.get(1).intValue();
+        long resetMillis = result.get(2);
 
-        return new RateLimitResult(isAllowed, maxRequests, remaining, resetTime);
+        return new RateLimitResult(allowed, maxRequests, Math.max(0, maxRequests - weightedCount),
+                resetMillis);
     }
 
-    public RateLimitResult getStatus(String userId){
+    /** Reads the window without consuming a request. */
+    public RateLimitResult getStatus(String userId) {
         return getStatus(userId, config.getMaxRequests(), config.getWindowSizeSeconds());
     }
-    public RateLimitResult getStatus(String userId, int maxRequests, int windowSeconds){
-        String currentKey = "sliding:"+userId+":current";
-        String previousKey = "sliding:" + userId + ":previous";
-        String timestampKey = "sliding:" + userId + ":timestamp";
 
-        long now = System.currentTimeMillis();
-        long windowSizems = windowSeconds*1000L;
+    /**
+     * Reads the window without consuming a request.
+     *
+     * <p>Runs the same script with a cost of 0 rather than reading the keys separately: three
+     * individual GETs are not atomic and can observe a window mid-slide.
+     */
+    public RateLimitResult getStatus(String userId, int maxRequests, int windowSeconds) {
+        String prefix = RateLimitKeys.slidingWindowPrefix(userId);
 
-        String currentCountStr = redisTemplate.opsForValue().get(currentKey);
-        String previousCountStr = redisTemplate.opsForValue().get(previousKey);
-        String windowStartStr = redisTemplate.opsForValue().get(timestampKey);
+        @SuppressWarnings("unchecked")
+        List<Long> result = redisTemplate.execute(
+                script,
+                Collections.singletonList(prefix),
+                String.valueOf(maxRequests),
+                String.valueOf(windowSeconds),
+                "0");
 
-        int currentCount = currentCountStr != null ? Integer.parseInt(currentCountStr) : 0;
-        int previousCount = previousCountStr != null ? Integer.parseInt(previousCountStr) : 0;
-        long windowStart = windowStartStr != null ? Long.parseLong(windowStartStr) : now;
+        if (result == null) {
+            throw new RateLimitScriptException(ALGORITHM, prefix);
+        }
 
-        long elapsed = now - windowStart;
-        double weight = Math.max(0,(windowSizems-elapsed)) / (double)windowSizems;
-        int weightedCount = (int) Math.floor(previousCount*weight + currentCount);
+        boolean allowed = result.get(0) == 1L;
+        int weightedCount = result.get(1).intValue();
+        long resetMillis = result.get(2);
 
-        int remaining = Math.max(0,(maxRequests-weightedCount));
-        long resetTime = windowSizems - elapsed;
-
-        boolean allowed = weightedCount < maxRequests;
-
-        return new RateLimitResult(allowed, maxRequests, remaining, resetTime);
+        return new RateLimitResult(allowed, maxRequests, Math.max(0, maxRequests - weightedCount),
+                resetMillis);
     }
 
-
-    private String getLuaScript() {
+    private String luaScript() {
         return """
+            -- KEYS[1] is the per-user prefix carrying the hash tag; the three keys below derive
+            -- from it and therefore share a cluster slot.
             local key_prefix = KEYS[1]
             local max_requests = tonumber(ARGV[1])
             local window_size_seconds = tonumber(ARGV[2])
-            local now = tonumber(ARGV[3])
+            local cost = tonumber(ARGV[3])
+
+            local time = redis.call('TIME')
+            local now = tonumber(time[1]) * 1000 + math.floor(tonumber(time[2]) / 1000)
 
             local window_size_ms = window_size_seconds * 1000
 
-            -- Keys for current window, previous window, and window start timestamp
-            local current_key = key_prefix .. ":current"
-            local previous_key = key_prefix .. ":previous"
-            local timestamp_key = key_prefix .. ":timestamp"
+            local current_key = key_prefix .. ':current'
+            local previous_key = key_prefix .. ':previous'
+            local timestamp_key = key_prefix .. ':timestamp'
 
-            -- Get current window start time
             local window_start = redis.call('GET', timestamp_key)
 
             if window_start == false then
-                -- First request ever - initialize
                 window_start = now
                 redis.call('SET', timestamp_key, now)
                 redis.call('SET', current_key, 0)
@@ -135,49 +136,57 @@ public class SlidingWindowService {
                 window_start = tonumber(window_start)
             end
 
-            -- Check if we need to slide the window
             local elapsed = now - window_start
 
             if elapsed >= window_size_ms then
-                -- Window has passed - slide
-                local current_count = redis.call('GET', current_key) or 0
-                current_count = tonumber(current_count)
+                local current_count = tonumber(redis.call('GET', current_key) or 0)
 
-                -- Move current to previous
-                redis.call('SET', previous_key, current_count)
+                -- More than one whole window may have passed while the user was idle; in that
+                -- case the previous window has also aged out entirely.
+                if elapsed >= window_size_ms * 2 then
+                    redis.call('SET', previous_key, 0)
+                else
+                    redis.call('SET', previous_key, current_count)
+                end
+
                 redis.call('SET', current_key, 0)
-                redis.call('SET', timestamp_key, now)
-
-                window_start = now
-                elapsed = 0
+                -- Align to the window boundary rather than to now, so windows do not drift
+                -- forward by the gap between requests.
+                window_start = window_start + math.floor(elapsed / window_size_ms) * window_size_ms
+                redis.call('SET', timestamp_key, window_start)
+                elapsed = now - window_start
             end
 
-            -- Get counts
             local current_count = tonumber(redis.call('GET', current_key) or 0)
             local previous_count = tonumber(redis.call('GET', previous_key) or 0)
 
-            -- Calculate weighted count using sliding window
-            -- Weight = portion of previous window still in our sliding window
             local weight = math.max(0, (window_size_ms - elapsed)) / window_size_ms
             local weighted_count = math.floor(previous_count * weight + current_count)
 
-            local allowed = 0
-            local reset_time = window_size_ms - elapsed
-
-            if weighted_count < max_requests then
-                -- Increment current window count
-                redis.call('INCR', current_key)
-                allowed = 1
-                weighted_count = weighted_count + 1
+            -- A cost of 0 is a read-only probe: it reports whether the NEXT request would be
+            -- allowed, so it tests room for one request without consuming any.
+            local probe = cost
+            if probe < 1 then
+                probe = 1
             end
 
-            -- Set TTL on all keys (2x window size for safety)
+            local allowed = 0
+            if weighted_count + probe <= max_requests then
+                if cost > 0 then
+                    redis.call('INCRBY', current_key, cost)
+                    weighted_count = weighted_count + cost
+                end
+                allowed = 1
+            end
+
+            local reset_ms = window_size_ms - elapsed
+
             local ttl = window_size_seconds * 2
             redis.call('EXPIRE', current_key, ttl)
             redis.call('EXPIRE', previous_key, ttl)
             redis.call('EXPIRE', timestamp_key, ttl)
 
-            return {allowed, weighted_count, reset_time}
+            return {allowed, weighted_count, reset_ms}
             """;
     }
 }

@@ -30,8 +30,8 @@ import jakarta.servlet.http.HttpServletResponse;
  * <p>This filter is registered explicitly in {@link SecurityConfig} rather than being a
  * {@code @Component}, which would make Boot register it a second time as a plain servlet filter.
  *
- * <p>Known limitation until phase 3: the token-bucket algorithm ignores the caller-supplied limit,
- * so these limits are only enforced exactly under the fixed-window and sliding-window algorithms.
+ * <p>The limit is enforced exactly under every algorithm, including token bucket, which now sizes
+ * its bucket from the limit it is given.
  */
 public class AuthThrottleFilter extends OncePerRequestFilter {
 
@@ -82,7 +82,7 @@ public class AuthThrottleFilter extends OncePerRequestFilter {
             return;
         }
 
-        long retryAfterSeconds = retryAfterSeconds(result);
+        long retryAfterSeconds = result.retryAfterSeconds();
         logger.warn("Throttled {} from {} ({} per minute)", path, clientIp, limit);
 
         response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
@@ -95,21 +95,5 @@ public class AuthThrottleFilter extends OncePerRequestFilter {
                         + "\"message\":\"Too many authentication attempts. Retry in "
                         + retryAfterSeconds + " seconds.\","
                         + "\"retryAfterSeconds\":" + retryAfterSeconds + "}");
-    }
-
-    /**
-     * Converts the result's reset time to a {@code Retry-After} value in seconds, rounding up and
-     * never returning less than 1 — a denied response that says "retry after 0 seconds" invites an
-     * immediate retry.
-     *
-     * <p>Assumes {@code resetTime} is milliseconds. Phase 3 makes that true for every algorithm;
-     * the fixed window currently reports seconds, which this clamps to the 1 second minimum.
-     */
-    private long retryAfterSeconds(RateLimitResult result) {
-        long resetMillis = result.getResetTime();
-        if (resetMillis <= 0) {
-            return 1L;
-        }
-        return Math.max(1L, (resetMillis + 999L) / 1000L);
     }
 }

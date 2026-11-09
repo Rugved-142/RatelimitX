@@ -68,16 +68,18 @@ public class ApiController {
             // Intentionally ignored.
         }
 
+        // Report the limit the limiter actually enforced, not the one we asked for: if the two
+        // ever diverge, the header should show what happened rather than what was intended.
         ResponseEntity.BodyBuilder responseBuilder = ResponseEntity
                 .status(result.isAllowed() ? HttpStatus.OK : HttpStatus.TOO_MANY_REQUESTS)
-                .header("X-RateLimit-Limit", String.valueOf(limit))
+                .header("X-RateLimit-Limit", String.valueOf(result.getLimit()))
                 .header("X-RateLimit-Remaining", String.valueOf(result.getRemaining()))
                 .header("X-RateLimit-Reset", String.valueOf(result.getResetTime()))
                 .header("X-Algorithm", algorithm)
                 .header("X-User-Role", user.getRole().name());
 
         if (!result.isAllowed()) {
-            responseBuilder.header("Retry-After", String.valueOf(retryAfterSeconds(result)));
+            responseBuilder.header("Retry-After", String.valueOf(result.retryAfterSeconds()));
             return responseBuilder.body("Rate limit exceeded. Retry after " + result.getResetTime() + "ms");
         }
 
@@ -95,19 +97,5 @@ public class ApiController {
                 "rateLimit", user.getRateLimit(),
                 "algorithm", resilientRateLimiter.getCurrentMode()
         ));
-    }
-
-    /**
-     * {@code Retry-After} in seconds, rounded up and never below 1, so a denied client is not told
-     * to retry immediately.
-     *
-     * <p>Assumes {@code resetTime} is milliseconds; phase 3 makes that uniform across algorithms.
-     */
-    private long retryAfterSeconds(RateLimitResult result) {
-        long resetMillis = result.getResetTime();
-        if (resetMillis <= 0) {
-            return 1L;
-        }
-        return Math.max(1L, (resetMillis + 999L) / 1000L);
     }
 }

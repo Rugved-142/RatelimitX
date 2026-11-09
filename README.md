@@ -78,7 +78,11 @@ Benchmarks: pending, see [docs/benchmarks.md](docs/benchmarks.md).
 - Fixed window counter — simple time-window based limiting
 - Token bucket — smooth limiting with burst support
 - Sliding window counter — no window-boundary burst
-- The algorithm in use is selected by the `ratelimit.algorithm` property at startup
+- Every decision is a single atomic Lua script, so concurrent requests cannot both pass
+- Window and refill arithmetic use Redis's clock, so instances cannot disagree about the time
+- Capacity and refill rate follow the caller's tier, not a fixed default
+- Keys carry a hash tag per user, so a Redis Cluster keeps one user's keys on one node
+- The algorithm can be switched at runtime via `POST /admin/algorithm`
 
 ### Monitoring & Observability
 - Prometheus metrics exposed at `/actuator/prometheus`
@@ -107,9 +111,8 @@ X-User-Role: PREMIUM           # User's role/tier
 Retry-After: 45                # Seconds before the client should retry (on 429)
 ```
 
-Known issue: the unit of `X-RateLimit-Reset` is not consistent across algorithms. Token bucket
-and sliding window report milliseconds; fixed window reports seconds. `Retry-After` is always
-whole seconds, rounded up, with a minimum of 1.
+`X-RateLimit-Reset` is milliseconds for every algorithm, and `X-RateLimit-Limit` reports the
+limit the limiter actually enforced. `Retry-After` is whole seconds, rounded up, never below 1.
 
 ---
 
@@ -250,7 +253,9 @@ Counts requests in fixed time windows (for example, per minute).
 
 ### 2. Token Bucket
 
-Tokens are added at a fixed rate; each request consumes a token.
+Tokens are added at a fixed rate; each request consumes a token. Capacity is the caller's
+per-minute limit and the refill rate is that limit divided by 60 seconds, so a tier allowed 100
+requests a minute can burst to 100 and then sustain 100 a minute.
 
 | Pros | Cons |
 |------|------|
@@ -372,7 +377,7 @@ while the circuit is open.
 | Metrics | Micrometer + Prometheus | Metrics collection |
 | Visualization | Grafana 10.1 | Dashboards |
 | ORM | Spring Data JPA (Hibernate 7) | Database access |
-| Scripting | Lua | Atomic Redis operations |
+| Scripting | Lua | Atomic rate limit decisions, with Redis as the time source |
 | Containerization | Docker & Docker Compose | Deployment |
 | Load testing | Gatling 3.10 | Performance measurement |
 | Build | Maven | Build & dependency management |
@@ -527,7 +532,7 @@ X-Algorithm: sliding-window
 X-User-Role: USER
 ```
 
-See the note under [API Headers](#api-headers) about the unit of `X-RateLimit-Reset`.
+
 
 #### Rate Limit Status
 ```http
@@ -556,6 +561,8 @@ GET /metrics/user/{userId}
 ```http
 GET    /admin/health
 GET    /admin/stats
+GET    /admin/algorithm
+POST   /admin/algorithm
 GET    /admin/user/{userId}
 GET    /admin/bucket/{userId}
 GET    /admin/sliding/{userId}
@@ -567,6 +574,19 @@ POST   /admin/circuit/reset
 ```
 
 ---
+
+#### Switch algorithm at runtime
+
+```http
+POST /admin/algorithm
+Authorization: Bearer <admin token>
+Content-Type: application/json
+
+{"algorithm": "token-bucket"}
+```
+
+Accepts `fixed-window`, `token-bucket` or `sliding-window`; anything else returns 400 and changes
+nothing. Each algorithm keeps its own Redis keys, so switching does not reset anyone's counters.
 
 ### Monitoring Endpoints
 

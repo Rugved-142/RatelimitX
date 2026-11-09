@@ -21,6 +21,8 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.ErrorResponse;
 
+import com.ratelimitx.core.config.UnsupportedAlgorithmException;
+
 import jakarta.validation.ConstraintViolationException;
 
 /**
@@ -85,6 +87,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({ConstraintViolationException.class, HandlerMethodValidationException.class})
     public ResponseEntity<Map<String, Object>> handleConstraintViolation(Exception ex) {
         return body(HttpStatus.BAD_REQUEST, "Bad Request", "Validation failed");
+    }
+
+    /** A caller asked for an algorithm that does not exist. */
+    @ExceptionHandler(UnsupportedAlgorithmException.class)
+    public ResponseEntity<Map<String, Object>> handleUnsupportedAlgorithm(
+            UnsupportedAlgorithmException ex) {
+        ResponseEntity<Map<String, Object>> response =
+                body(HttpStatus.BAD_REQUEST, "Bad Request", ex.getMessage());
+        Map<String, Object> payload = new LinkedHashMap<>(response.getBody());
+        payload.put("supported", ex.getSupported());
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(payload);
     }
 
     /** Malformed or missing request body. */
