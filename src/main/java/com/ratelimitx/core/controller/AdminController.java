@@ -123,8 +123,11 @@ public class AdminController {
         return stats;
     }
 
+    /**
+     * Operational health of the rate limiter's Redis dependency. ADMIN only, like the rest of
+     * {@code /admin/**}: it reports internal state and writes a probe key to Redis.
+     */
     @GetMapping("/health")
-    @PreAuthorize("permitAll()")
     public Map<String, Object> health() {
         Map<String, Object> health = new HashMap<>();
 

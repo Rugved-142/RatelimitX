@@ -364,13 +364,13 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "increase(ratelimit_requests_denied{user_id!=\"\"}[5m])",
+          "expr": "increase(ratelimit_requests_denied{algorithm!=\"\"}[5m])",
           "interval": "",
-          "legendFormat": "{{ user_id }}",
+          "legendFormat": "{{ algorithm }}",
           "refId": "A"
         }
       ],
-      "title": "Denied Requests by User",
+      "title": "Denied Requests by Algorithm",
       "type": "timeseries"
     },
     {
@@ -496,7 +496,7 @@
           "refId": "A"
         }
       ],
-      "title": "Circuit Breaker State",
+      "title": "Circuit Breaker State (not wired up yet)",
       "type": "stat"
     },
     {

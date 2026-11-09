@@ -8,9 +8,10 @@ import java.util.function.Function;
 
 import javax.crypto.SecretKey;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
+
+import com.ratelimitx.core.config.JwtProperties;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
@@ -21,15 +22,14 @@ import io.jsonwebtoken.security.Keys;
 @Component
 public class JwtUtil {
     
-    @Value("${jwt.secret}")
-    private String secretString;
-    
-    @Value("${jwt.expiration}")
-    private Long expiration;
-    
-    
+    private final JwtProperties properties;
+
+    public JwtUtil(JwtProperties properties) {
+        this.properties = properties;
+    }
+
     private SecretKey getSigningKey() {
-        byte[] keyBytes = secretString.getBytes(StandardCharsets.UTF_8);
+        byte[] keyBytes = properties.getSecret().getBytes(StandardCharsets.UTF_8);
         return Keys.hmacShaKeyFor(keyBytes);
     }
     
@@ -49,7 +49,7 @@ public class JwtUtil {
     
     private String createToken(Map<String, Object> claims, String subject) {
         Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + expiration);
+        Date expiryDate = new Date(now.getTime() + properties.getExpiration());
         
         return Jwts.builder()
                 .claims(claims)
@@ -114,7 +114,8 @@ public class JwtUtil {
         return extractExpiration(token).before(new Date());
     }
     
-    public Long getExpirationTime() {
-        return expiration;
+    /** @return the configured token lifetime in <strong>milliseconds</strong>. */
+    public long getExpirationTime() {
+        return properties.getExpiration();
     }
 }

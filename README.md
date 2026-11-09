@@ -52,7 +52,9 @@ Redis is unavailable. The whole stack runs under Docker Compose.
 - **Tiered rate limits** — USER (10), PREMIUM (100), ADMIN (1000) requests/min by default
 - **Three Redis algorithms** — fixed window, token bucket, sliding window counter
 - **Circuit breaker fallback** — in-memory limiting while Redis is unreachable
-- **Prometheus + Grafana** — metrics endpoint and an auto-provisioned dashboard
+- **No default secrets** — the application refuses to start without a 32-byte `JWT_SECRET`
+- **Login throttling** — `/auth/login` and `/auth/register` capped per client IP
+- **Prometheus + Grafana** — metrics on a private management port, auto-provisioned dashboard
 - **Docker Compose** — 5 services: app, PostgreSQL, Redis, Prometheus, Grafana
 
 Benchmarks: pending, see [docs/benchmarks.md](docs/benchmarks.md).
@@ -67,6 +69,10 @@ Benchmarks: pending, see [docs/benchmarks.md](docs/benchmarks.md).
 - Role-based access control — USER, PREMIUM, ADMIN
 - Tiered rate limits per role
 - Spring Security 7
+- No secret has a default value; a missing or short `JWT_SECRET` aborts startup
+- `/auth/login` and `/auth/register` are throttled per client IP (5/min each by default)
+- All errors are JSON: 401 unauthenticated, 403 unauthorised, 400 validation, 404 unknown
+- Actuator is served on a private port that Docker Compose does not publish
 
 ### Rate Limiting Algorithms
 - Fixed window counter — simple time-window based limiting
@@ -102,7 +108,8 @@ Retry-After: 45                # Seconds before the client should retry (on 429)
 ```
 
 Known issue: the unit of `X-RateLimit-Reset` is not consistent across algorithms. Token bucket
-and sliding window report milliseconds; fixed window reports seconds.
+and sliding window report milliseconds; fixed window reports seconds. `Retry-After` is always
+whole seconds, rounded up, with a minimum of 1.
 
 ---
 
@@ -277,11 +284,13 @@ RateLimitX ships with a Prometheus and Grafana stack.
 |--------|------|-------------|
 | `http_server_requests_seconds` | Histogram | HTTP request latencies |
 | `ratelimit_requests_total` | Counter | Total rate limit checks |
-| `ratelimit_requests_denied` | Counter | Denied requests |
+| `ratelimit_requests_denied` | Counter | Denied requests, tagged by algorithm |
 | `ratelimit_check_duration` | Timer | Rate limit check duration |
-| `app_circuitbreaker_state` | Gauge | Circuit breaker state (0=CLOSED, 1=HALF_OPEN, 2=OPEN) |
 | `jvm_memory_used_bytes` | Gauge | JVM memory usage |
 | `jvm_threads_current` | Gauge | Active threads |
+
+No metric carries a per-user label: one time series per user would grow without bound. Per-user
+counts come from `/metrics/user/{userId}` instead.
 
 See [MONITORING-SETUP.md](MONITORING-SETUP.md) for the full setup and example PromQL queries.
 
@@ -289,9 +298,35 @@ See [MONITORING-SETUP.md](MONITORING-SETUP.md) for the full setup and example Pr
 
 | Service | URL | Credentials |
 |---------|-----|-------------|
-| Application | http://localhost:8080 | - |
-| Prometheus | http://localhost:9090 | - |
-| Grafana | http://localhost:3000 | `admin` / `admin` from `docker-compose.yml` — change before any non-local use |
+| Application | http://localhost:8080 | JWT |
+| Prometheus | http://127.0.0.1:9090 | - |
+| Grafana | http://127.0.0.1:3000 | `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` from `.env` |
+
+Prometheus, Grafana, PostgreSQL and Redis publish their host ports on `127.0.0.1` only, so they
+are not reachable from other machines on the network. Only the application's port 8080 is bound
+on all interfaces.
+
+### Actuator
+
+Actuator runs on its own port (`management.server.port=9091`) which Docker Compose does not
+publish. Prometheus scrapes `app:9091` across the internal network; nothing under `/actuator` is
+mapped on port 8080 at all.
+
+This was chosen over keeping actuator on port 8080 behind an ADMIN role check. Prometheus would
+then need credentials to scrape, and a single mistake in a request matcher would expose health
+details, `/actuator/env` or the metrics endpoint publicly. An unpublished port cannot be reached
+from outside the Compose network however the authorization rules are written.
+
+The cost is that `curl http://localhost:8080/actuator/health` no longer works from the host. Check
+health instead with:
+
+```bash
+docker compose ps
+```
+
+```bash
+docker exec ratelimitx-app curl -fsS http://localhost:9091/actuator/health
+```
 
 ---
 
@@ -362,18 +397,20 @@ cd RateLimitX
 cp .env.example .env
 ```
 
-Edit `.env` and set `POSTGRES_PASSWORD`, `SPRING_DATASOURCE_PASSWORD` and `JWT_SECRET`
-to your own values. Then start the five services:
+Edit `.env` and replace every `replace_me_*` value. `JWT_SECRET` must be at least 32 bytes or the
+application will not start; generate one with `openssl rand -base64 48`. `SPRING_DATASOURCE_PASSWORD`
+must match `POSTGRES_PASSWORD`. Then start the five services:
 
 ```bash
 docker compose up --build
 ```
 
 ```bash
-curl http://localhost:8080/actuator/health
+docker compose ps
 ```
 
-Grafana is at http://localhost:3000 and Prometheus at http://localhost:9090.
+The `app` service reports `healthy` once its container healthcheck passes. Grafana is at
+http://127.0.0.1:3000 and Prometheus at http://127.0.0.1:9090.
 
 ### Building and Testing Locally
 
@@ -533,8 +570,12 @@ POST   /admin/circuit/reset
 
 ### Monitoring Endpoints
 
+Served on the management port (9091), which is not published to the host. See
+[Actuator](#actuator).
+
 ```http
 GET /actuator/health
+GET /actuator/info
 GET /actuator/prometheus
 ```
 
@@ -576,6 +617,8 @@ RateLimitX/
 │   │
 │   ├── config/
 │   │   ├── RateLimitConfig.java            # Rate limit configuration
+│   │   ├── AuthThrottleProperties.java     # Per-IP auth endpoint limits
+│   │   ├── JwtProperties.java              # JWT secret, validated at startup
 │   │   ├── RedisConfig.java                # Redis connection setup
 │   │   └── MetricsConfig.java              # Micrometer/Prometheus config
 │   │
@@ -598,9 +641,14 @@ RateLimitX/
 │   │   └── UserRepository.java
 │   │
 │   ├── security/
+│   │   ├── AuthenticatedUser.java          # Principal carrying id, role, rate limit
+│   │   ├── AuthThrottleFilter.java         # Per-IP throttle on /auth/login, /auth/register
+│   │   ├── ClientIpResolver.java           # Client IP, X-Forwarded-For opt-in
 │   │   ├── CustomUserDetailsService.java
 │   │   ├── JwtAuthenticationFilter.java
 │   │   ├── JwtUtil.java
+│   │   ├── RestAccessDeniedHandler.java    # 403 JSON
+│   │   ├── RestAuthenticationEntryPoint.java  # 401 JSON
 │   │   └── SecurityConfig.java
 │   │
 │   ├── circuitbreaker/
@@ -610,6 +658,10 @@ RateLimitX/
 │   │
 │   ├── model/
 │   │   └── RateLimitResult.java
+│   │
+│   ├── web/
+│   │   ├── GlobalExceptionHandler.java     # JSON error responses
+│   │   └── UserNotFoundException.java
 │   │
 │   └── service/
 │       ├── RateLimiterService.java         # Fixed window
@@ -640,12 +692,15 @@ docker compose ps
 ```
 
 ```bash
-curl http://localhost:8080/actuator/health
+docker exec ratelimitx-app curl -fsS http://localhost:9091/actuator/health
 ```
 
 ```bash
 curl -X POST http://localhost:8080/auth/register -H "Content-Type: application/json" -d '{"username":"testuser","email":"test@example.com","password":"password123"}'
 ```
+
+Registration and login are limited to 5 requests per minute per client IP; further attempts
+return 429 with a `Retry-After` header.
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8080/auth/login -H "Content-Type: application/json" -d '{"username":"testuser","password":"password123"}' | jq -r '.token')
@@ -658,7 +713,7 @@ for i in $(seq 1 15); do curl -s -o /dev/null -w "%{http_code}\n" http://localho
 The first 10 requests return 200 and the rest return 429 for a USER-tier account.
 
 ```bash
-curl -s http://localhost:8080/actuator/prometheus | grep ratelimit
+docker exec ratelimitx-app curl -s http://localhost:9091/actuator/prometheus | grep ratelimit
 ```
 
 ---
