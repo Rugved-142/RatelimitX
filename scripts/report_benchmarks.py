@@ -392,9 +392,10 @@ def render(environment: dict[str, Any], runs: list[RunResult], results_dir: Path
         f"{'same host as the service' if shares_host else 'separate host'} |")
     add(f"| Commit | `{repository.get('commit', NOT_MEASURED)}` |")
     if repository.get("uncommittedChanges"):
-        add("| Working tree | **had uncommitted changes**, so this run is not reproducible from the commit alone |")
+        add("| Source at run time | **had uncommitted changes**, so this run is not reproducible "
+            "from the commit alone |")
     else:
-        add("| Working tree | clean |")
+        add("| Source at run time | committed, excluding this run's own output |")
     add("")
 
     if shares_host:

@@ -204,7 +204,10 @@ app_cpu_limit="$(docker inspect --format '{{.HostConfig.NanoCpus}}' ratelimitx-a
 docker_version="$(docker version --format '{{.Server.Version}}' 2>/dev/null || echo unknown)"
 compose_version="$(docker compose version --short 2>/dev/null || echo unknown)"
 git_commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-git_dirty="$(test -n "$(git status --porcelain 2>/dev/null)" && echo true || echo false)"
+# Whether the code that produced this run was committed. The run's own outputs are excluded:
+# docs/benchmarks.md is tracked and this script rewrites it, so including it would mark every
+# run as unreproducible on the strength of its own report.
+git_dirty="$(test -n "$(git status --porcelain -- . ':!docs/benchmarks' ':!docs/benchmarks.md' 2>/dev/null)" && echo true || echo false)"
 
 python3 - "$OUT_ROOT/environment.json" <<PYEOF
 import json, sys

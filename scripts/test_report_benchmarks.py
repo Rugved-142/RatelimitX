@@ -365,6 +365,16 @@ def test_report_marks_an_unclean_working_tree(tmp_path: Path):
     assert "uncommitted changes" in markdown
 
 
+def test_report_states_when_the_source_was_committed(tmp_path: Path):
+    write_environment(tmp_path)
+    write_run(tmp_path, "run-1")
+
+    environment, runs = load_results(tmp_path)
+    markdown = render(environment, runs, tmp_path)
+
+    assert "committed, excluding this run's own output" in markdown
+
+
 def test_missing_environment_file_does_not_crash_the_report(tmp_path: Path):
     write_run(tmp_path, "run-1")
 
