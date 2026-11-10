@@ -133,11 +133,11 @@ echo "  ready endpoints: ${ready:-0}"
 # ---------------------------------------------------------------------------
 
 BASE_URL="http://127.0.0.1:18080"
-log "Checking the API answers on $BASE_URL"
+log "Waiting for the API to answer on $BASE_URL"
 for _ in $(seq 1 30); do
   # An unauthenticated request must be refused with 401. That is a working application and a
   # working Service: anything else here means one of them is not.
-  status="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/data" || echo 000)"
+  status="$(curl -s -o /dev/null -w '%{http_code}' "$BASE_URL/api/data" || true)"
   [[ "$status" == "401" ]] && break
   sleep 2
 done
@@ -146,7 +146,17 @@ if [[ "$status" != "401" ]]; then
   kube -n "$NAMESPACE" get pods
   exit 1
 fi
-echo "  GET /api/data -> 401 as expected for an unauthenticated caller"
+
+# The same smoke test the compose stack is held to, against the cluster. It is the definition of
+# done for this repository, and a deployment that cannot pass it is not a working deployment
+# whatever `kubectl get pods` says.
+#
+# --no-container matters: without it the checks that need to get inside the service would
+# `docker exec` into the compose stack's container, which is very likely also running on this
+# machine. They would then report on compose while every request went to the cluster. Those
+# checks skip themselves instead, and say so.
+log "Running the smoke test against the cluster"
+scripts/smoke-test.sh --base-url "$BASE_URL" --no-container
 
 log "Done"
 kube -n "$NAMESPACE" get pods -o wide

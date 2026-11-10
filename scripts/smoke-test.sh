@@ -16,7 +16,7 @@
 # actuator check needs a container to exec into, so it is skipped when neither is reachable.
 #
 # Usage:
-#   scripts/smoke-test.sh [--base-url URL] [--keep-user]
+#   scripts/smoke-test.sh [--base-url URL] [--container NAME | --no-container] [--keep-user]
 #
 set -euo pipefail
 
@@ -26,6 +26,15 @@ cd "$REPO_ROOT"
 BASE_URL="${RLX_BASE_URL:-http://localhost:8080}"
 KEEP_USER=false
 
+# Some checks - the metrics scrape, the readiness group, removing the test user - need to get
+# inside the service, which here means `docker exec` into the compose container. They are gated
+# on this name rather than on "is there a container called ratelimitx-app", because when the
+# compose stack and the kind cluster are both up on one machine that question answers yes while
+# the traffic is going to the cluster: the checks would then inspect one deployment and report on
+# another. scripts/kind-up.sh passes --no-container for exactly that reason.
+CONTAINER="${RLX_CONTAINER:-ratelimitx-app}"
+DB_CONTAINER="${RLX_DB_CONTAINER:-ratelimitx-postgres}"
+
 # A unique user per run, so a second run is not defeated by the first one's registration and so
 # the rate limit counters start empty. The password is only ever used against this local stack.
 SMOKE_USER="smoke$(date +%s)$$"
@@ -34,6 +43,8 @@ SMOKE_PASSWORD="smoke-test-password-123"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --base-url) BASE_URL="$2"; shift 2 ;;
+    --container) CONTAINER="$2"; shift 2 ;;
+    --no-container) CONTAINER=""; DB_CONTAINER=""; shift ;;
     --keep-user) KEEP_USER=true; shift ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -105,10 +116,10 @@ pass "an unauthenticated GET /api/data returns 401, not 403 or a connection erro
 # container that came up seconds ago and the datasource is still warming and the meters are not
 # all registered yet, which produces failures that say nothing about the service. Wait for the
 # readiness group where there is a container to ask.
-if command -v docker >/dev/null 2>&1 \
-    && grep -qx ratelimitx-app <<< "$(docker ps --format '{{.Names}}' 2>/dev/null)"; then
+if [[ -n "$CONTAINER" ]] && command -v docker >/dev/null 2>&1 \
+    && grep -qx "$CONTAINER" <<< "$(docker ps --format '{{.Names}}' 2>/dev/null)"; then
   for _ in $(seq 1 60); do
-    readiness="$(docker exec ratelimitx-app curl -fsS \
+    readiness="$(docker exec "$CONTAINER" curl -fsS \
       http://localhost:9091/actuator/health/readiness 2>/dev/null \
       | python3 -c 'import sys, json; print(json.load(sys.stdin)["status"])' 2>/dev/null || true)"
     [[ "$readiness" == "UP" ]] && break
@@ -229,14 +240,14 @@ step "Metrics"
 # Only possible where there is a container to exec into; the point is that the metrics the
 # Grafana dashboards and the alert rules are built on actually exist.
 if command -v docker >/dev/null 2>&1 \
-    && grep -qx ratelimitx-app <<< "$(docker ps --format '{{.Names}}' 2>/dev/null)"; then
+    && grep -qx "$CONTAINER" <<< "$(docker ps --format '{{.Names}}' 2>/dev/null)"; then
   # Micrometer publishes a timer only once something has been recorded into it, so these appear
   # a moment after the traffic above rather than at startup. Retry briefly instead of reporting a
   # missing metric that is about to exist.
   # Scraped once into a variable, then searched. See the note on grep -q at the top.
   metrics=""
   for _ in $(seq 1 15); do
-    metrics="$(docker exec ratelimitx-app curl -fsS \
+    metrics="$(docker exec "$CONTAINER" curl -fsS \
       http://localhost:9091/actuator/prometheus 2>/dev/null || true)"
     # The HTTP timer only exists once a request has been recorded into it, so this can need a
     # moment after the traffic above.
@@ -252,11 +263,11 @@ if command -v docker >/dev/null 2>&1 \
       fail "$metric is missing from /actuator/prometheus"
     fi
   done
-  health="$(docker exec ratelimitx-app curl -fsS http://localhost:9091/actuator/health 2>/dev/null \
+  health="$(docker exec "$CONTAINER" curl -fsS http://localhost:9091/actuator/health 2>/dev/null \
     | python3 -c 'import sys, json; print(json.load(sys.stdin)["status"])' 2>/dev/null || echo "?")"
   expect "the container reports itself healthy" UP "$health"
 else
-  printf '  skip  metrics checks (no ratelimitx-app container to exec into)\n'
+  printf '  skip  metrics checks (no container to exec into; this run drove %s)\n' "$BASE_URL"
 fi
 
 # ---------------------------------------------------------------------------
@@ -265,10 +276,10 @@ step "Cleaning up"
 
 if [[ "$KEEP_USER" == true ]]; then
   printf '  kept  %s\n' "$SMOKE_USER"
-elif command -v docker >/dev/null 2>&1 \
-    && grep -qx ratelimitx-postgres <<< "$(docker ps --format '{{.Names}}' 2>/dev/null)"; then
+elif [[ -n "$DB_CONTAINER" ]] && command -v docker >/dev/null 2>&1 \
+    && grep -qx "$DB_CONTAINER" <<< "$(docker ps --format '{{.Names}}' 2>/dev/null)"; then
   # Leaving a user behind per run would slowly fill the table on a long-lived stack.
-  if docker exec -i ratelimitx-postgres sh -c \
+  if docker exec -i "$DB_CONTAINER" sh -c \
       'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -q' \
       <<< "DELETE FROM users WHERE username='$SMOKE_USER';" >/dev/null 2>&1; then
     printf '  ok    removed the smoke test user\n'
@@ -276,7 +287,7 @@ elif command -v docker >/dev/null 2>&1 \
     printf '  note  could not remove %s; delete it by hand if it matters\n' "$SMOKE_USER"
   fi
 else
-  printf '  note  left %s behind; no postgres container to remove it from\n' "$SMOKE_USER"
+  printf '  note  left %s behind; no reachable database container to remove it from\n' "$SMOKE_USER"
 fi
 
 # ---------------------------------------------------------------------------
