@@ -83,8 +83,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pytest
-        run: python -m pip install --disable-pip-version-check pytest==8.3.5
+      - name: Install pytest and pyyaml
+        # pyyaml is needed by test_k8s_manifests.py, which checks the Kubernetes manifests
+        # statically so a regression is caught on every push rather than only when kind runs.
+        run: python -m pip install --disable-pip-version-check pytest==8.3.5 pyyaml==6.0.2
 
       - name: Run the report generator tests
         run: python -m pytest scripts -q
@@ -96,6 +98,89 @@ jobs:
           docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" \
             --entrypoint promtool prom/prometheus:v2.47.0 \
             check config /etc/prometheus/prometheus.yml
+
+  kubernetes:
+    name: Kubernetes on kind
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+
+    # Until this job is green, nothing in the documentation may claim the service runs on
+    # Kubernetes. The manifests are checked statically in the scripts job above; this one
+    # actually deploys them, proves the Service answers through both replicas, and kills a pod
+    # under load to show it keeps answering.
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python
+        uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
+        with:
+          python-version: "3.12"
+
+      # Installed from the release binary with a recorded checksum rather than through a
+      # third-party action, for the same reason the actions above are pinned by commit SHA: this
+      # is the one place where what runs in the pipeline is decided.
+      - name: Install kind
+        env:
+          KIND_VERSION: v0.33.0
+          KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+        run: |
+          curl -fsSLo /tmp/kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64"
+          echo "${KIND_SHA256}  /tmp/kind" | sha256sum --check --strict
+          sudo install -m 0755 /tmp/kind /usr/local/bin/kind
+          kind version
+
+      # Creates the cluster, builds the image into it, applies k8s/, and fails unless both
+      # replicas are ready endpoints and the API answers through the Service.
+      - name: Bring up the cluster
+        run: scripts/kind-up.sh
+
+      - name: Show what is running
+        run: |
+          kubectl --context kind-ratelimitx -n ratelimitx get pods -o wide
+          kubectl --context kind-ratelimitx -n ratelimitx get svc,endpointslice
+
+      # Deletes one of the two replicas under steady load and fails if the caller saw a single
+      # 5xx or dropped connection.
+      - name: Pod kill test under load
+        run: scripts/pod-kill-test.sh --baseline 20 --observe 60
+
+      - name: Fail if the pod kill test recorded any failure
+        run: |
+          python3 - <<'PY'
+          import glob, json, sys
+          runs = sorted(glob.glob("docs/pod-kill-tests/*/summary.json"))
+          if not runs:
+              sys.exit("the pod kill test produced no summary")
+          totals = json.load(open(runs[-1]))["totals"]
+          print(json.dumps(totals, indent=2))
+          if totals["failures"]:
+              sys.exit(f"{totals['failures']} of {totals['requests']} requests failed")
+          if totals["requests"] < 100:
+              sys.exit(f"only {totals['requests']} requests were recorded; too few to mean anything")
+          PY
+
+      - name: Collect diagnostics
+        if: failure()
+        run: |
+          kubectl --context kind-ratelimitx -n ratelimitx get all -o wide || true
+          kubectl --context kind-ratelimitx -n ratelimitx describe pods || true
+          kubectl --context kind-ratelimitx -n ratelimitx logs -l app.kubernetes.io/name=ratelimitx \
+            --tail=200 --all-containers || true
+
+      - name: Upload the run data
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pod-kill-test
+          path: docs/pod-kill-tests/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Tear down
+        if: always()
+        run: kind delete cluster --name ratelimitx || true
 
   image:
     name: Build image and scan

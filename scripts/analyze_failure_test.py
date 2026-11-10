@@ -308,6 +308,24 @@ def fmt_seconds(value: float | None) -> str:
     return NOT_MEASURED if value is None else f"{value:,.1f} s"
 
 
+def platform_name(environment: dict[str, Any]) -> str:
+    """Which platform the run was driven against; "compose" when unrecorded, as older runs are."""
+    return environment.get("platform", {}).get("name") or "compose"
+
+
+def _replica_count(environment: dict[str, Any]) -> int:
+    """How many application instances the run was driven against. Defaults to 1 when unrecorded.
+
+    Every admission figure in this report is a total across however many instances were running,
+    and the fallback's limits are per instance, so this number changes what the figures mean.
+    """
+    raw = environment.get("platform", {}).get("appReplicas")
+    try:
+        return max(1, int(raw))
+    except (TypeError, ValueError):
+        return 1
+
+
 def fmt_rate(value: float | None) -> str:
     return NOT_MEASURED if value is None else f"{value:,.1f}"
 
@@ -390,11 +408,22 @@ def render(results_dir: Path, environment: dict[str, Any], events: dict[str, Any
     # -- what was done -----------------------------------------------------
     add("## What was done")
     add("")
-    add("Steady load was driven against `/api/data` for the whole run. Part way through, the")
-    add("Redis container was paused with `docker compose pause redis`, left paused, and then")
-    add("unpaused. A pause freezes the process rather than stopping it, so connections stay")
-    add("open and commands simply never get an answer: that is the failure mode the 200 ms")
-    add("Redis timeout and the circuit breaker exist for.")
+    add("Steady load was driven against `/api/data` for the whole run. Part way through, Redis")
+    add("was frozen, left frozen, and then let go. Freezing rather than stopping is the point:")
+    add("connections stay open and commands simply never get an answer, which is the failure")
+    add("mode the 200 ms Redis timeout and the circuit breaker exist for. Stopping the container")
+    add("would have refused connections instead, which is a different failure.")
+    add("")
+    if platform_name(environment) == "kubernetes":
+        add("On Kubernetes the freeze is SIGSTOP to the `redis-server` process, sent from the")
+        add("kind node rather than from inside the pod. Kubernetes has no equivalent of")
+        add("`docker compose pause`, and kind's default CNI does not enforce NetworkPolicy, so")
+        add("SIGSTOP is what reproduces the failure the compose run used. It has to come from")
+        add("outside the pod's PID namespace: the kernel discards an unhandled signal sent to")
+        add("PID 1 from inside its own namespace, so `kubectl exec ... kill -STOP 1` does nothing")
+        add("at all and Redis keeps answering.")
+    else:
+        add("The freeze is `docker compose pause redis`, which uses the freezer cgroup.")
     add("")
     add("Throughout, `/admin/circuit` was polled so the breaker's state could be timed. That")
     add("endpoint reads in-memory state and touches neither Redis nor the fallback, which is why")
@@ -512,9 +541,22 @@ def render(results_dir: Path, environment: dict[str, Any], events: dict[str, Any
     add("- **No availability figure.** This is a single run of about two minutes, under one")
     add("  synthetic load shape, on one machine. It cannot support a claim about availability")
     add("  over any period, and none is made here or anywhere else in this repository.")
-    add("- **One instance.** The local fallback's limits are per instance, so the admission")
-    add("  numbers above apply to a single replica. With N replicas in the fallback, between")
-    add("  them they would admit up to N times as many requests per window.")
+    replicas = _replica_count(environment)
+    if replicas == 1:
+        add("- **One instance.** The local fallback's limits are per instance, so the admission")
+        add("  numbers above apply to a single replica. With N replicas in the fallback, between")
+        add("  them they would admit up to N times as many requests per window.")
+    else:
+        add(f"- **{replicas} instances, and the fallback's limits are per instance.** While the")
+        add("  breaker was open each replica enforced the configured limit against its own")
+        add(f"  counters, so between them the {replicas} of them could admit up to {replicas}")
+        add("  times the configured rate. The admission figures above are the total across all")
+        add("  of them, not one replica's.")
+    if replicas != 1:
+        add("- **The breaker is per instance too.** The state timeline above is one pod's, polled")
+        add("  directly rather than through the Service, because a load-balanced poll would")
+        add("  interleave independent state machines. The other replicas ran their own breakers")
+        add("  over the same outage; nothing here times those.")
     add("- **One failure mode.** A frozen Redis is not the same as a Redis that refuses")
     add("  connections, returns errors, or loses data. Only the frozen case was tested.")
     add("- **The load generator shared the machine with the service**, so the response times")
@@ -530,6 +572,19 @@ def render(results_dir: Path, environment: dict[str, Any], events: dict[str, Any
     add(f"| OS | {host.get('os', NOT_MEASURED)} |")
     add(f"| CPU | {host.get('cpuModel', NOT_MEASURED)} ({host.get('cpuCount', NOT_MEASURED)} "
         "logical) |")
+    platform = environment.get("platform", {})
+    add(f"| Platform | {platform.get('name', NOT_MEASURED)} |")
+    add(f"| Application replicas | {platform.get('appReplicas', NOT_MEASURED)} |")
+    if platform.get("name") == "kubernetes":
+        add(f"| Kubernetes server | {platform.get('kubernetesServer', NOT_MEASURED)} |")
+        add(f"| Node image | {platform.get('nodeOsImage', NOT_MEASURED)} |")
+        add(f"| Pod whose breaker was timed | {events.get('observedPod') or NOT_MEASURED} |")
+    restarts_before = events.get("redisRestartsBefore")
+    restarts_after = events.get("redisRestartsAfter")
+    if restarts_before is not None and restarts_after is not None:
+        same = str(restarts_before) == str(restarts_after)
+        add(f"| Redis container restarts during the run | "
+            f"{'none' if same else f'{restarts_before} -> {restarts_after}'} |")
     add(f"| Docker engine | {environment.get('docker', {}).get('engine', NOT_MEASURED)} |")
     add(f"| Commit | `{repository.get('commit', NOT_MEASURED)}` |")
     dirty = repository.get("uncommittedChanges")
@@ -544,13 +599,22 @@ def render(results_dir: Path, environment: dict[str, Any], events: dict[str, Any
 
     add("## Reproducing this")
     add("")
-    add("```bash")
-    add("docker compose up -d --build")
-    add("```")
-    add("")
-    add("```bash")
-    add("scripts/failure-test.sh")
-    add("```")
+    if platform_name(environment) == "kubernetes":
+        add("```bash")
+        add("scripts/kind-up.sh")
+        add("```")
+        add("")
+        add("```bash")
+        add("scripts/failure-test.sh --platform kubernetes")
+        add("```")
+    else:
+        add("```bash")
+        add("docker compose up -d --build")
+        add("```")
+        add("")
+        add("```bash")
+        add("scripts/failure-test.sh")
+        add("```")
     add("")
     add("The request log, the circuit breaker poll log, the event timestamps and the captured")
     add(f"environment are committed under `{results_dir.as_posix()}/`. This file is regenerated")

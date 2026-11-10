@@ -1,0 +1,73 @@
+{
+  "totals": {
+    "requests": 1600,
+    "allowed": 1600,
+    "denied": 0,
+    "serverErrors": 0,
+    "noResponse": 0,
+    "unexpected": 0,
+    "failures": 0
+  },
+  "intervals": {
+    "deleteToPodGoneMs": 15944,
+    "deleteToFullEndpointsMs": 15898
+  },
+  "requestsServedByPod": {
+    "ratelimitx-7f7bf6d795-d9zz6": 420,
+    "ratelimitx-7f7bf6d795-nvbtg": 968,
+    "ratelimitx-7f7bf6d795-gjjdf": null
+  },
+  "phases": [
+    {
+      "name": "before",
+      "durationSeconds": 20.087,
+      "requests": 401,
+      "allowed": 401,
+      "denied": 0,
+      "serverErrors": 0,
+      "noResponse": 0,
+      "unexpected": 0,
+      "latencyMs": {
+        "p50": 6.0,
+        "p95": 9.0,
+        "p99": 12.0,
+        "max": 20.0,
+        "count": 401
+      }
+    },
+    {
+      "name": "disruption",
+      "durationSeconds": 15.898,
+      "requests": 318,
+      "allowed": 318,
+      "denied": 0,
+      "serverErrors": 0,
+      "noResponse": 0,
+      "unexpected": 0,
+      "latencyMs": {
+        "p50": 4.0,
+        "p95": 8.0,
+        "p99": 1431.0,
+        "max": 1625.0,
+        "count": 318
+      }
+    },
+    {
+      "name": "after",
+      "durationSeconds": 44.086,
+      "requests": 881,
+      "allowed": 881,
+      "denied": 0,
+      "serverErrors": 0,
+      "noResponse": 0,
+      "unexpected": 0,
+      "latencyMs": {
+        "p50": 6.0,
+        "p95": 11.0,
+        "p99": 76.0,
+        "max": 1079.0,
+        "count": 881
+      }
+    }
+  ]
+}

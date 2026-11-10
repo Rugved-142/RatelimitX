@@ -1,0 +1,25 @@
+{
+  "capturedAt": "2026-11-10T17:41:28Z",
+  "label": "",
+  "host": {
+    "os": "Darwin 27.0.0",
+    "arch": "arm64"
+  },
+  "platform": {
+    "name": "kubernetes",
+    "kubernetesServer": "v1.37.0",
+    "appReplicas": 2,
+    "terminationGracePeriodSeconds": 45
+  },
+  "repository": {
+    "commit": "189a2d43611f69c1f888d8cea95476d9f6ff9a8b",
+    "uncommittedChanges": true
+  },
+  "parameters": {
+    "baseUrl": "http://127.0.0.1:18080",
+    "ratePerSecond": 20.0,
+    "userLimit": 5000,
+    "baselineSeconds": 20.0,
+    "observeSeconds": 60.0
+  }
+}

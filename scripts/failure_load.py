@@ -137,9 +137,17 @@ def poll_circuit(base_url: str, admin_token: str, interval_ms: int, stop: thread
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base-url", required=True)
+    parser.add_argument("--circuit-base-url", default=None,
+                        help="where to poll /admin/circuit, if not --base-url. With more than "
+                             "one replica the breaker is per instance, so polling through a "
+                             "load-balanced Service would interleave two state machines; this "
+                             "points the poller at one pod.")
     parser.add_argument("--tokens", required=True,
                         help="JSON file: a list of {username, token} for the load users")
-    parser.add_argument("--admin-token", required=True)
+    parser.add_argument("--admin-token", default=None,
+                        help="enables the /admin/circuit poller. Omitted when the run is not "
+                             "about the circuit breaker, in which case no polling happens and no "
+                             "circuit.jsonl is written.")
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--duration-seconds", type=float, required=True)
     parser.add_argument("--rate", type=float, required=True,
@@ -157,13 +165,15 @@ def main() -> int:
 
     recorder = Recorder()
     stop = threading.Event()
-    poller = threading.Thread(
-        target=poll_circuit,
-        args=(args.base_url, args.admin_token, args.poll_interval_ms, stop,
-              out_dir / "circuit.jsonl"),
-        daemon=True,
-    )
-    poller.start()
+    poller = None
+    if args.admin_token:
+        poller = threading.Thread(
+            target=poll_circuit,
+            args=(args.circuit_base_url or args.base_url, args.admin_token,
+                  args.poll_interval_ms, stop, out_dir / "circuit.jsonl"),
+            daemon=True,
+        )
+        poller.start()
 
     interval = 1.0 / args.rate
     started_ms = now_ms()
@@ -192,7 +202,8 @@ def main() -> int:
             seq += 1
 
     stop.set()
-    poller.join(timeout=5)
+    if poller is not None:
+        poller.join(timeout=5)
     finished_ms = now_ms()
 
     rows = sorted(recorder.rows, key=lambda row: row["seq"])
@@ -209,6 +220,7 @@ def main() -> int:
         "requestedRatePerSecond": args.rate,
         "durationSeconds": args.duration_seconds,
         "pollIntervalMs": args.poll_interval_ms,
+        "circuitBaseUrl": (args.circuit_base_url or args.base_url) if args.admin_token else None,
         "users": [user["username"] for user in users],
         "submitted": submitted,
         "notSubmitted": not_submitted,

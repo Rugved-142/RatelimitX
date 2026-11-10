@@ -25,6 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 SLO = REPO_ROOT / "docs" / "slo.md"
 BENCHMARKS = REPO_ROOT / "docs" / "benchmarks.md"
 FAILURE_TEST = REPO_ROOT / "docs" / "failure-test.md"
+FAILURE_TEST_K8S = REPO_ROOT / "docs" / "failure-test-kubernetes.md"
 RULES = REPO_ROOT / "prometheus" / "rules" / "ratelimitx.rules.yml"
 FAILURE_RUNS = REPO_ROOT / "docs" / "failure-tests"
 
@@ -36,8 +37,9 @@ def slo_text() -> str:
 
 
 def latest_failure_summary() -> dict:
-    runs = sorted(path for path in FAILURE_RUNS.glob("*/summary.json")) if FAILURE_RUNS.is_dir() \
-        else []
+    # Runs are filed per platform, docs/failure-tests/<platform>/<date>/. slo.md quotes the
+    # compose run, which is the single-instance baseline every figure in it is about.
+    runs = sorted(FAILURE_RUNS.glob("compose/*/summary.json")) if FAILURE_RUNS.is_dir() else []
     if not runs:
         pytest.skip("no committed failure test run to check against")
     return json.loads(runs[-1].read_text(encoding="utf-8"))
@@ -140,7 +142,7 @@ def test_no_alert_is_documented_that_does_not_exist():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", [SLO, BENCHMARKS, FAILURE_TEST])
+@pytest.mark.parametrize("path", [SLO, BENCHMARKS, FAILURE_TEST, FAILURE_TEST_K8S])
 def test_no_document_claims_an_availability_figure(path):
     if not path.is_file():
         pytest.skip(f"{path.name} is not present")
@@ -172,7 +174,7 @@ def run_readmes() -> list[Path]:
     return sorted(
         path
         for parent in ("benchmarks", "failure-tests")
-        for path in (REPO_ROOT / "docs" / parent).glob("*/README.md")
+        for path in (REPO_ROOT / "docs" / parent).glob("**/README.md")
         if (REPO_ROOT / "docs" / parent).is_dir()
     )
 
@@ -204,3 +206,95 @@ def test_the_files_a_run_readme_lists_are_actually_committed(readme):
             if not any(re.fullmatch(pattern, path) for path in tracked):
                 missing.append(expanded)
     assert not missing, f"{run_dir}/README.md lists files git does not track: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# docs/kubernetes.md
+#
+# Same problem as slo.md: it is written by hand and quotes figures from two generated reports,
+# so it is where a number goes stale after a re-run.
+# ---------------------------------------------------------------------------
+
+KUBERNETES = REPO_ROOT / "docs" / "kubernetes.md"
+POD_KILL = REPO_ROOT / "docs" / "pod-kill-test.md"
+POD_KILL_RUNS = REPO_ROOT / "docs" / "pod-kill-tests"
+
+
+def kubernetes_text() -> str:
+    if not KUBERNETES.is_file():
+        pytest.skip("docs/kubernetes.md is not present")
+    return KUBERNETES.read_text(encoding="utf-8")
+
+
+def latest_summary(root: Path, pattern: str) -> dict:
+    runs = sorted(root.glob(pattern)) if root.is_dir() else []
+    if not runs:
+        pytest.skip(f"no committed run under {root}")
+    return json.loads(runs[-1].read_text(encoding="utf-8"))
+
+
+def k8s_failure_summary() -> dict:
+    return latest_summary(FAILURE_RUNS, "kubernetes/*/summary.json")
+
+
+def pod_kill_summary() -> dict:
+    return latest_summary(POD_KILL_RUNS, "*/summary.json")
+
+
+def test_the_kubernetes_failure_figures_match_that_run():
+    summary = k8s_failure_summary()
+    totals = summary["totals"]
+    transitions = summary["transitions"]
+    text = kubernetes_text()
+    for expected in (
+        f"{totals['failures']:,} of {totals['requests']:,} requests",
+        f"{transitions['pauseToObservedOpenMs']:,} ms",
+        f"{transitions['lastObservedOpenBeforeUnpauseToClosedMs']:,} ms",
+    ):
+        assert expected in text, f"docs/kubernetes.md should quote '{expected}'"
+
+
+def test_the_pod_kill_figures_match_that_run():
+    summary = pod_kill_summary()
+    totals = summary["totals"]
+    text = kubernetes_text()
+    expected = f"{totals['failures']:,} of {totals['requests']:,} requests"
+    assert expected in text, f"docs/kubernetes.md should quote '{expected}'"
+    restored = summary["intervals"]["deleteToFullEndpointsMs"]
+    assert f"{restored:,} ms" in text, f"docs/kubernetes.md should quote '{restored:,} ms'"
+
+
+def test_the_quoted_per_pod_split_matches_that_run():
+    """The claim that the Service spread the load rests on exactly these two counts."""
+    served = sorted(
+        (count for count in pod_kill_summary()["requestsServedByPod"].values()
+         if count is not None),
+        reverse=True,
+    )
+    if len(served) < 2:
+        pytest.skip("fewer than two surviving pods were counted")
+    expected = f"{served[0]:,} and {served[1]:,}"
+    assert expected in kubernetes_text(), f"docs/kubernetes.md should quote '{expected}'"
+
+
+def test_the_quoted_latency_cost_of_a_pod_kill_matches_that_run():
+    phases = {phase["name"]: phase for phase in pod_kill_summary()["phases"]}
+    text = kubernetes_text()
+    worst = phases["disruption"]["latencyMs"]["max"]
+    assert f"{worst:,.0f} ms" in text, f"docs/kubernetes.md should quote '{worst:,.0f} ms'"
+    baseline_p95 = phases["before"]["latencyMs"]["p95"]
+    assert f"{baseline_p95:,.0f} ms p95" in text, \
+        f"docs/kubernetes.md should quote '{baseline_p95:,.0f} ms p95'"
+
+
+def test_the_kubernetes_documents_claim_no_availability_figure():
+    for path in (KUBERNETES, POD_KILL):
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8").lower()
+        for forbidden in ["99.9%", "99.99%", "five nines", "zero downtime", "highly available"]:
+            assert forbidden not in text, f"{path.name} contains '{forbidden}'"
+
+
+def test_the_kubernetes_document_says_what_it_does_not_establish():
+    assert "not high availability" in kubernetes_text().lower()

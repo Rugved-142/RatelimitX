@@ -1,0 +1,119 @@
+# Redis: one replica, one volume.
+#
+# One replica, no replication and no Sentinel. That is a deliberate limit of this deployment and
+# not something the manifests hide: Redis is the shared state every rate limit decision depends
+# on, and its outage is exactly the failure the circuit breaker and the local fallback exist for.
+# docs/failure-test.md measures what happens when it goes away. What it costs is in docs/slo.md:
+# while Redis is unreachable, limits are enforced per replica rather than globally.
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: ratelimitx
+  labels:
+    app.kubernetes.io/name: redis
+spec:
+  clusterIP: None
+  # Keep resolving the pod's address even while it is not ready.
+  #
+  # With one replica and no load balancing there is nothing to protect a client from: removing
+  # the only address turns a Redis that is merely unresponsive into NXDOMAIN, which the
+  # application sees as a name resolution error rather than the connection timeout the circuit
+  # breaker is written around. The failure test measures the timeout path, and this keeps the
+  # deployment's behaviour matching what was measured.
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: ratelimitx
+  labels:
+    app.kubernetes.io/name: redis
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999         # the redis user in redis:7-alpine
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          args:
+            # Rate limit counters all carry a TTL, so losing the dataset on restart costs a
+            # window at most. Persistence is on because the volume is there, but nothing here
+            # depends on it.
+            - "--save"
+            - "60 1"
+            - "--appendonly"
+            - "no"
+          ports:
+            - name: redis
+              containerPort: 6379
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          # Deliberately slow to restart a hung Redis.
+          #
+          # Measured, on this cluster: with a 15s period and a threshold of 4, the kubelet killed
+          # a frozen Redis about 45 seconds in. That is too fast to be useful here. A Redis that
+          # stops answering is the failure the circuit breaker and the local fallback already
+          # absorb - the service keeps serving, see docs/failure-test.md - so restarting it
+          # quickly buys nothing, while destroying the state that would let anyone diagnose why
+          # it hung. Restarting it also drops the dataset, which is cheap for rate limit counters
+          # and not free in general.
+          #
+          # 10s x 12 gives about two minutes: long enough for the breaker to open, time out,
+          # probe and close on its own, and still short enough to recover a genuinely wedged
+          # server without a human.
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

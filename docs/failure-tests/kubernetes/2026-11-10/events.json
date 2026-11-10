@@ -1,0 +1,13 @@
+{
+  "loadStartedAtMs": 1794332019201,
+  "redisPausedAtMs": 1794332049272,
+  "redisPauseCommandReturnedAtMs": 1794332049497,
+  "redisUnpausedAtMs": 1794332089527,
+  "redisUnpauseCommandReturnedAtMs": 1794332089605,
+  "loadFinishedAtMs": 1794332159329,
+  "platform": "kubernetes",
+  "observedPod": "ratelimitx-6f88db576-6vbx2",
+  "redisRestartsBefore": "0",
+  "redisRestartsAfter": "0",
+  "note": "redisPausedAtMs and redisUnpausedAtMs are the moments the docker commands were sent, not the moments they returned. Using the earlier timestamp makes every transition time measured from them an upper bound."
+}
