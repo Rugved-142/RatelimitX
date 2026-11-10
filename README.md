@@ -393,6 +393,8 @@ Behaviour worth knowing before relying on it:
 | Scripting | Lua | Atomic rate limit decisions, with Redis as the time source |
 | Containerization | Docker & Docker Compose | Deployment |
 | Load testing | Gatling 3.10 | Performance measurement |
+| Testing | JUnit 5, Testcontainers 1.21.3 | Unit and integration tests |
+| Coverage | JaCoCo 0.8.13 | Coverage report, no gate |
 | Build | Maven | Build & dependency management |
 
 ---
@@ -434,6 +436,16 @@ http://127.0.0.1:3000 and Prometheus at http://127.0.0.1:9090.
 
 ```bash
 ./mvnw -B verify
+```
+
+This runs 65 unit tests and 89 integration tests and writes a coverage report to
+`target/site/jacoco/index.html`. The integration tests (`*IT`) start a real Redis and PostgreSQL
+with Testcontainers, so **Docker must be running**. There is no coverage threshold yet.
+
+Unit tests alone, with no Docker required:
+
+```bash
+./mvnw -B test
 ```
 
 For local debugging, the `dev` profile turns on SQL logging and debug logging for the rate
@@ -645,6 +657,7 @@ RateLimitX/
 ├── docs/
 │   └── benchmarks.md                       # Measurement results (pending)
 │
+│
 ├── prometheus/
 │   └── prometheus.yml                      # Prometheus configuration
 │
@@ -717,10 +730,34 @@ RateLimitX/
 ├── src/main/resources/
 │   └── application.properties
 │
+├── src/test/java/com/ratelimitx/core/
+│   ├── support/                            # Shared containers and helpers
+│   ├── circuitbreaker/                     # Breaker and fallback unit tests
+│   ├── config/                             # Properties validation tests
+│   ├── security/                           # Auth, roles, throttling (*IT)
+│   ├── controller/                         # API headers per tier (*IT)
+│   ├── service/                            # Per-algorithm behaviour (*IT)
+│   └── resilience/                         # Redis outage and recovery (*IT)
+│
 └── src/test/scala/loadtest/
     ├── RateLimitXSimulation.scala          # Gatling simulation
     └── simpleLoadTest.scala
 ```
+
+## Testing
+
+| Suite | Kind | Covers |
+|-------|------|--------|
+| `CircuitBreakerTest` | unit | State transitions against a hand-moved clock, single-probe behaviour, failure classification |
+| `LocalRateLimiterTest` | unit | Atomic admission, rollover under 200 threads, eviction |
+| `RateLimitConfigTest` | unit | Algorithm validation and concurrent switching |
+| `JwtPropertiesTest` | unit | Startup refuses a missing or short `JWT_SECRET` |
+| `RateLimitAlgorithmIT` | Testcontainers | Exact limits, tier limits and 200-thread concurrency per algorithm |
+| `WindowRolloverIT` | Testcontainers | Real waiting over 2-second windows: rollover and token refill |
+| `SecurityIT` | Testcontainers + MockMvc | Absent, forged, expired and orphaned tokens; role enforcement; actuator exposure |
+| `AuthThrottleIT` | Testcontainers + MockMvc | Per-IP login and register throttling, `Retry-After`, `X-Forwarded-For` handling |
+| `ApiRateLimitIT` | Testcontainers + MockMvc | 200-then-429 with correct headers for every tier and algorithm |
+| `RedisOutageIT` | Testcontainers | Redis paused under load: no 5xx, breaker opens, fallback serves, recovery closes it |
 
 ---
 

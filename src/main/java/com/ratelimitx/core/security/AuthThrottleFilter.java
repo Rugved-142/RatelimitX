@@ -60,7 +60,7 @@ public class AuthThrottleFilter extends OncePerRequestFilter {
             return;
         }
 
-        String path = request.getServletPath();
+        String path = requestPath(request);
         int limit;
         String bucket;
         if (LOGIN_PATH.equals(path)) {
@@ -95,5 +95,23 @@ public class AuthThrottleFilter extends OncePerRequestFilter {
                         + "\"message\":\"Too many authentication attempts. Retry in "
                         + retryAfterSeconds + " seconds.\","
                         + "\"retryAfterSeconds\":" + retryAfterSeconds + "}");
+    }
+
+    /**
+     * The request path, taken from the request URI with any context path removed.
+     *
+     * <p>Deliberately not {@code getServletPath()}. That returns "" until the container has
+     * resolved a servlet mapping, and it also shifts if the application is deployed under a
+     * context path or with the dispatcher mapped somewhere other than the root. In any of those
+     * cases the path comparison below would stop matching and the throttle would quietly fail
+     * open, which is the worst way for a protection like this to break.
+     */
+    private String requestPath(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (contextPath != null && !contextPath.isEmpty() && uri.startsWith(contextPath)) {
+            uri = uri.substring(contextPath.length());
+        }
+        return uri;
     }
 }
