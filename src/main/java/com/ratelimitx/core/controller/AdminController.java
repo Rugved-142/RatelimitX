@@ -25,12 +25,18 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ratelimitx.core.circuitbreaker.CircuitBreaker;
 import com.ratelimitx.core.circuitbreaker.LocalRateLimiter;
 import com.ratelimitx.core.config.RateLimitConfig;
+import com.ratelimitx.core.dto.UpdateUserLimitRequest;
+import com.ratelimitx.core.entity.User;
 import com.ratelimitx.core.model.RateLimitResult;
+import com.ratelimitx.core.repository.UserRepository;
 import com.ratelimitx.core.service.RateLimitKeys;
 import com.ratelimitx.core.service.RateLimiterService;
 import com.ratelimitx.core.service.ResilientRateLimiter;
 import com.ratelimitx.core.service.SlidingWindowService;
 import com.ratelimitx.core.service.TokenBucketService;
+import com.ratelimitx.core.web.UserNotFoundException;
+
+import jakarta.validation.Valid;
 
 
 
@@ -64,6 +70,9 @@ public class AdminController {
 
     @Autowired
     private RateLimiterService fixedWindowService;
+
+    @Autowired
+    private UserRepository userRepository;
 
     /**
      * Upper bound on keys returned by one administrative scan. SCAN is incremental, but an
@@ -308,17 +317,41 @@ public class AdminController {
 
     // ==================== USER MANAGEMENT ENDPOINTS ====================
 
+    /**
+     * Sets the rate limit, and optionally the role, that will actually be enforced for a user.
+     *
+     * <p>This used to write the value into a Redis hash called {@code user-limits}. Nothing on the
+     * request path ever read that hash: the limit applied to {@code /api/data} comes from the
+     * authenticated principal, which is loaded from the users table. So the endpoint reported
+     * success, the admin views below echoed the new number back, and the limit the caller actually
+     * received never changed. It now updates the user row, which is the value the limiter uses.
+     */
     @PostMapping("/limit")
-    public Map<String, Object> setUserLimit(@RequestBody Map<String, Object> request) {
-        String userId = (String) request.get("userId");
-        Integer limit = (Integer) request.get("limit");
+    public Map<String, Object> setUserLimit(@Valid @RequestBody UpdateUserLimitRequest request) {
+        User user = userRepository.findByUsername(request.getUsername())
+                .orElseThrow(() -> new UserNotFoundException(request.getUsername()));
 
-        redis.opsForHash().put("user-limits", userId, String.valueOf(limit));
+        if (request.getRole() != null) {
+            user.setRole(request.getRole());
+            // Without an explicit limit, move the user onto their new tier's default.
+            if (request.getRateLimit() == null) {
+                user.setRateLimit(request.getRole().getDefaultRateLimit());
+            }
+        }
+        if (request.getRateLimit() != null) {
+            user.setRateLimit(request.getRateLimit());
+        }
+
+        userRepository.save(user);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "success");
-        response.put("userId", userId);
-        response.put("newLimit", limit);
+        response.put("username", user.getUsername());
+        response.put("role", user.getRole().name());
+        response.put("rateLimit", user.getRateLimit());
+        // An existing token still carries the old claims; the limiter reads the user row on each
+        // request, so the new limit applies immediately regardless.
+        response.put("note", "Applies to the next request; existing tokens remain valid.");
         return response;
     }
 
@@ -362,8 +395,16 @@ public class AdminController {
 
     // ==================== HELPER METHODS ====================
 
+    /**
+     * The limit that would actually be enforced for a user, read from the same place the request
+     * path reads it. The admin views below must not report a different number from the one the
+     * limiter applies.
+     */
     private int getUserLimit(String userId) {
-        String customLimit = (String) redis.opsForHash().get("user-limits", userId);
-        return customLimit != null ? Integer.parseInt(customLimit) : 10;
+        return userRepository.findByUsername(userId)
+                .map(user -> user.getRateLimit() != null
+                        ? user.getRateLimit()
+                        : user.getRole().getDefaultRateLimit())
+                .orElseThrow(() -> new UserNotFoundException(userId));
     }
 }

@@ -64,6 +64,11 @@ services:
       - SPRING_JPA_HIBERNATE_DDL_AUTO=update
       # No fallback value: the application fails fast if this is missing or shorter than 32 bytes.
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env}
+      # Per-IP caps on the auth endpoints. The defaults here are the production values; they are
+      # overridable only so a benchmark can provision its users, which would otherwise take
+      # minutes at 5 registrations a minute. Nothing else should change them.
+      - RATELIMIT_AUTH_LOGIN_LIMIT_PER_MINUTE=${RATELIMIT_AUTH_LOGIN_LIMIT_PER_MINUTE:-5}
+      - RATELIMIT_AUTH_REGISTER_LIMIT_PER_MINUTE=${RATELIMIT_AUTH_REGISTER_LIMIT_PER_MINUTE:-5}
     depends_on:
       postgres:
         condition: service_healthy

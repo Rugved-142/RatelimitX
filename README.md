@@ -101,7 +101,7 @@ Benchmarks: pending, see [docs/benchmarks.md](docs/benchmarks.md).
 ### Operations
 - Docker and Docker Compose
 - 5 orchestrated services: app, PostgreSQL, Redis, Prometheus, Grafana
-- Gatling load-test harness (see [Benchmarks](#benchmarks))
+- Gatling load-test harness driving the authenticated API (see [Benchmarks](#benchmarks))
 
 ### API Headers
 ```
@@ -611,6 +611,20 @@ POST   /admin/circuit/reset
 
 ---
 
+#### Set a user's limit or tier
+
+```http
+POST /admin/limit
+Authorization: Bearer <admin token>
+Content-Type: application/json
+
+{"username": "someone", "role": "PREMIUM", "rateLimit": 100}
+```
+
+`rateLimit` is requests per minute and takes effect on the user's next request. Omitting it while
+giving a `role` moves the user to that tier's default. Existing tokens stay valid: the limiter
+reads the user record on each request rather than trusting the token's claims.
+
 #### Switch algorithm at runtime
 
 ```http
@@ -639,11 +653,32 @@ GET /actuator/prometheus
 
 ## Benchmarks
 
-Benchmarks: pending, see [docs/benchmarks.md](docs/benchmarks.md).
+Measured results are in [docs/benchmarks.md](docs/benchmarks.md), generated from committed run
+data under `docs/benchmarks/<date>/`. No figure in that document is typed by hand.
 
-The Gatling simulations under `src/test/scala/loadtest/` are not currently usable against the
-JWT-protected API, and no reproducible measurement run is committed yet. No latency,
-throughput or availability figures are published until one is.
+```bash
+docker compose up -d --build
+```
+
+```bash
+scripts/benchmark.sh --runs 3 --algorithm sliding-window
+```
+
+The script records the machine, container limits, Docker version and load parameters alongside the
+raw Gatling output, runs the simulation three times, and regenerates the report with
+`scripts/report_benchmarks.py`. It works on Linux and macOS and opens nothing.
+
+Two throughput figures are reported separately, because a 429 is a correct answer from a rate
+limiter and not a failure: **decisions per second** covers every request the service ruled on,
+while **allowed per second** counts only admissions and is bounded by the configured per-minute
+caps rather than by the service's capacity. Collapsing them into one number would describe
+neither.
+
+The report generator has its own tests:
+
+```bash
+cd scripts && python3 -m pytest test_report_benchmarks.py
+```
 
 ---
 
@@ -656,7 +691,13 @@ RateLimitX/
 ├── pom.xml                                 # Maven build
 │
 ├── docs/
-│   └── benchmarks.md                       # Measurement results (pending)
+│   ├── benchmarks.md                       # Generated from the run data below
+│   └── benchmarks/<date>/                  # Raw Gatling output and captured environment
+│
+├── scripts/
+│   ├── benchmark.sh                        # Runs the benchmark and regenerates the report
+│   ├── report_benchmarks.py                # Builds benchmarks.md from saved runs
+│   └── test_report_benchmarks.py           # pytest tests for the generator
 │
 │
 ├── prometheus/
