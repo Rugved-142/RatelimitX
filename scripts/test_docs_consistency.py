@@ -1,0 +1,153 @@
+"""Checks that docs/slo.md still agrees with the runs and the rules it quotes.
+
+Run with:  python3 -m pytest scripts/test_docs_consistency.py
+
+docs/benchmarks.md and docs/failure-test.md are generated, so their numbers cannot drift from the
+saved runs. docs/slo.md is written by hand and quotes figures from both, which is exactly the
+place a number goes stale: a later run changes the generated reports and the hand-written summary
+keeps the old value. These tests fail when that happens, so the choice is to update slo.md rather
+than to leave a wrong number in it.
+
+They also check that the alert table in slo.md lists every rule that exists and no rule that does
+not, because an alert nobody documented and a documented alert that was deleted are both ways for
+the operational story to stop being true.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SLO = REPO_ROOT / "docs" / "slo.md"
+BENCHMARKS = REPO_ROOT / "docs" / "benchmarks.md"
+FAILURE_TEST = REPO_ROOT / "docs" / "failure-test.md"
+RULES = REPO_ROOT / "prometheus" / "rules" / "ratelimitx.rules.yml"
+FAILURE_RUNS = REPO_ROOT / "docs" / "failure-tests"
+
+
+def slo_text() -> str:
+    if not SLO.is_file():
+        pytest.skip("docs/slo.md is not present")
+    return SLO.read_text(encoding="utf-8")
+
+
+def latest_failure_summary() -> dict:
+    runs = sorted(path for path in FAILURE_RUNS.glob("*/summary.json")) if FAILURE_RUNS.is_dir() \
+        else []
+    if not runs:
+        pytest.skip("no committed failure test run to check against")
+    return json.loads(runs[-1].read_text(encoding="utf-8"))
+
+
+# ---------------------------------------------------------------------------
+# The figures slo.md quotes from the failure test
+# ---------------------------------------------------------------------------
+
+
+def test_the_failure_count_matches_the_run():
+    summary = latest_failure_summary()
+    totals = summary["totals"]
+    expected = f"{totals['failures']:,} of {totals['requests']:,} requests"
+    assert expected in slo_text(), f"docs/slo.md should quote '{expected}'"
+
+
+def test_the_time_to_open_matches_the_run():
+    transitions = latest_failure_summary()["transitions"]
+    expected = f"{transitions['pauseToObservedOpenMs']:,} ms"
+    assert expected in slo_text(), f"docs/slo.md should quote '{expected}'"
+
+
+def test_the_breaker_cycle_time_matches_the_run():
+    transitions = latest_failure_summary()["transitions"]
+    expected = f"{transitions['lastObservedOpenBeforeUnpauseToClosedMs']:,} ms"
+    assert expected in slo_text(), f"docs/slo.md should quote '{expected}'"
+
+
+def test_the_fallback_count_matches_the_run():
+    expected = f"{latest_failure_summary()['totals']['servedByFallback']:,}"
+    assert expected in slo_text(), f"docs/slo.md should quote '{expected}'"
+
+
+def test_the_admission_rates_match_the_run():
+    """The claim that the fallback enforced a more generous limit rests on these two numbers."""
+    phases = {phase["name"]: phase for phase in latest_failure_summary()["phases"]}
+    before = phases["baseline"]["allowedPerSecond"]
+    during = phases["outage"]["allowedPerSecond"]
+    expected = f"from {before:,.1f} to {during:,.1f} per second"
+    assert expected in slo_text(), f"docs/slo.md should quote '{expected}'"
+
+
+# ---------------------------------------------------------------------------
+# The figures slo.md quotes from the benchmark
+# ---------------------------------------------------------------------------
+
+
+def benchmark_row(label: str) -> str:
+    if not BENCHMARKS.is_file():
+        pytest.skip("docs/benchmarks.md is not present")
+    for line in BENCHMARKS.read_text(encoding="utf-8").splitlines():
+        if line.startswith(f"| {label} |"):
+            return line.split("|")[2].strip()
+    pytest.fail(f"docs/benchmarks.md has no '{label}' row")
+
+
+@pytest.mark.parametrize("label,unit", [
+    ("Response time p50 (ms)", "ms"),
+    ("Response time p95 (ms)", "ms"),
+    ("Response time p99 (ms)", "ms"),
+])
+def test_the_quoted_latency_percentiles_match_the_benchmark(label, unit):
+    # The generated table may carry a range, e.g. "5 (min 4, max 6)"; slo.md quotes the median.
+    median = benchmark_row(label).split(" ")[0]
+    expected = f"| {median} {unit} |"
+    assert expected in slo_text(), f"docs/slo.md should quote '{expected}' for {label}"
+
+
+def test_the_quoted_denial_share_matches_the_benchmark():
+    share = benchmark_row("Denied share of decisions (%)").split(" ")[0]
+    assert f"{share}%" in slo_text(), f"docs/slo.md should quote {share}% as the denied share"
+
+
+# ---------------------------------------------------------------------------
+# The alert table
+# ---------------------------------------------------------------------------
+
+
+def rule_names() -> set[str]:
+    if not RULES.is_file():
+        pytest.skip("the alert rules file is not present")
+    return set(re.findall(r"^\s*- alert:\s*(\S+)", RULES.read_text(encoding="utf-8"),
+                          flags=re.MULTILINE))
+
+
+def test_every_alert_rule_is_documented():
+    undocumented = sorted(name for name in rule_names() if f"`{name}`" not in slo_text())
+    assert not undocumented, f"alert rules missing from docs/slo.md: {undocumented}"
+
+
+def test_no_alert_is_documented_that_does_not_exist():
+    documented = set(re.findall(r"`(RateLimitX[A-Za-z]+)`", slo_text()))
+    missing = sorted(documented - rule_names())
+    assert not missing, f"docs/slo.md documents alerts that no longer exist: {missing}"
+
+
+# ---------------------------------------------------------------------------
+# The things these documents must not say
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("path", [SLO, BENCHMARKS, FAILURE_TEST])
+def test_no_document_claims_an_availability_figure(path):
+    if not path.is_file():
+        pytest.skip(f"{path.name} is not present")
+    text = path.read_text(encoding="utf-8").lower()
+    for forbidden in ["99.9%", "99.99%", "99.999%", "five nines", "three nines"]:
+        assert forbidden not in text, f"{path.name} contains '{forbidden}'"
+
+
+def test_the_slo_document_says_plainly_that_no_objective_is_set():
+    assert "no service level objective is set" in slo_text().lower()

@@ -176,6 +176,14 @@ class Phase:
         return self.tally(lambda request: request.is_failure)
 
     @property
+    def allowed_per_second(self) -> float | None:
+        """Admissions per second. The figure the fallback is expected to change."""
+        duration = self.duration_seconds
+        if not duration:
+            return None
+        return self.allowed / duration
+
+    @property
     def fallback_responses(self) -> int:
         """Responses the service itself labelled as served by the local fallback."""
         return self.tally(lambda request: request.algorithm == "local-fallback")
@@ -300,10 +308,54 @@ def fmt_seconds(value: float | None) -> str:
     return NOT_MEASURED if value is None else f"{value:,.1f} s"
 
 
+def fmt_rate(value: float | None) -> str:
+    return NOT_MEASURED if value is None else f"{value:,.1f}"
+
+
 def fmt_ratio(part: int | None, whole: int | None) -> str:
     if part is None or not whole:
         return NOT_MEASURED
     return f"{100.0 * part / whole:.1f}%"
+
+
+def _admission_note(phases: list[Phase]) -> list[str]:
+    """States, from the measured admission rates, what the failover did to the limit.
+
+    The fallback keeps its own counters and cannot see Redis's, so when the breaker opens every
+    caller starts a fresh window on this instance regardless of how much of their Redis window
+    they had already spent. Whether that shows up as extra admissions depends on how much of the
+    window the callers had used, so this reports what happened in this run rather than asserting
+    a general rule.
+    """
+    by_name = {phase.name: phase for phase in phases}
+    baseline = by_name.get("baseline")
+    outage = by_name.get("outage")
+    if baseline is None or outage is None:
+        return []
+    before = baseline.allowed_per_second
+    during = outage.allowed_per_second
+    if before is None or during is None:
+        return []
+
+    lines = ["#### What the failover did to the limit", ""]
+    lines.append("The fallback keeps its own counters and cannot read Redis's, so when the")
+    lines.append("breaker opens every caller starts a fresh window on this instance however much")
+    lines.append("of their Redis window they had already spent.")
+    lines.append("")
+    if during > before:
+        lines.append(f"That is visible here: admissions went from {before:,.1f} per second while")
+        lines.append(f"Redis was up to {during:,.1f} per second while it was frozen, against a")
+        lines.append("configured limit that did not change. The service kept answering, which is")
+        lines.append("the point of the fallback, but it was enforcing a more generous limit than")
+        lines.append("the one it is configured with, and it says so in the `X-Algorithm` header")
+        lines.append("on every one of those responses.")
+    else:
+        lines.append(f"In this run it did not raise the admission rate: {before:,.1f} per second")
+        lines.append(f"while Redis was up against {during:,.1f} per second while it was frozen.")
+        lines.append("That depends on how much of their window the callers had already spent when")
+        lines.append("the breaker opened, so it is not a property to rely on.")
+    lines.append("")
+    return lines
 
 
 def render(results_dir: Path, environment: dict[str, Any], events: dict[str, Any],
@@ -405,17 +457,21 @@ def render(results_dir: Path, environment: dict[str, Any], events: dict[str, Any
     add("")
     add("A request belongs to the phase it was *sent* in.")
     add("")
-    add("| Phase | Duration | Requests | 200 | 429 | 5xx | No response | Served by fallback |")
-    add("|-------|----------|----------|-----|-----|-----|-------------|--------------------|")
+    add("| Phase | Duration | Requests | 200 | 429 | 5xx | No response | Allowed/s | "
+        "Served by fallback |")
+    add("|-------|----------|----------|-----|-----|-----|-------------|-----------|"
+        "--------------------|")
     for phase in phases:
         add(f"| {phase.name} | {fmt_seconds(phase.duration_seconds)} | "
             f"{fmt_int(len(phase.requests))} | {fmt_int(phase.allowed)} | "
             f"{fmt_int(phase.denied)} | {fmt_int(phase.server_errors)} | "
-            f"{fmt_int(phase.no_responses)} | {fmt_int(phase.fallback_responses)} |")
+            f"{fmt_int(phase.no_responses)} | {fmt_rate(phase.allowed_per_second)} | "
+            f"{fmt_int(phase.fallback_responses)} |")
     add("")
     add("`Served by fallback` counts responses whose `X-Algorithm` header was `local-fallback`,")
     add("which is the service reporting on itself rather than an inference from the timing.")
     add("")
+    lines.extend(_admission_note(phases))
 
     add("### Response time by phase")
     add("")
@@ -551,6 +607,7 @@ def build_summary(phases: list[Phase], samples: list[dict[str, Any]],
                 "serverErrors": phase.server_errors,
                 "noResponse": phase.no_responses,
                 "unexpected": phase.unexpected,
+                "allowedPerSecond": phase.allowed_per_second,
                 "servedByFallback": phase.fallback_responses,
                 "latencyMs": latency_summary(phase.requests),
             }

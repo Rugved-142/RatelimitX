@@ -1,0 +1,9 @@
+{
+  "loadStartedAtMs": 1794330192861,
+  "redisPausedAtMs": 1794330222890,
+  "redisPauseCommandReturnedAtMs": 1794330222974,
+  "redisUnpausedAtMs": 1794330263003,
+  "redisUnpauseCommandReturnedAtMs": 1794330263131,
+  "loadFinishedAtMs": 1794330332941,
+  "note": "redisPausedAtMs and redisUnpausedAtMs are the moments the docker commands were sent, not the moments they returned. Using the earlier timestamp makes every transition time measured from them an upper bound."
+}

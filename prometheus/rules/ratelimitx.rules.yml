@@ -49,6 +49,13 @@ groups:
       # multiply by the number of replicas, so this is a correctness problem even though nothing
       # is failing. 'for: 1m' is longer than the configured 30s open timeout, so a single
       # recovered blip does not page anyone.
+      #
+      # Measured consequence, from the 40 second outage in docs/failure-test.md: the breaker was
+      # out of CLOSED for about 60 seconds, this alert reached 'pending' and returned to normal
+      # within a second or two of the 1 minute mark without ever firing. A Redis outage shorter
+      # than roughly a minute and a half will therefore not fire this. That is the deliberate
+      # trade for not paging on every blip; RateLimitXFallbackInUse below is the rule that
+      # catches the short ones, because it watches a counter rather than a state.
       - alert: RateLimitXCircuitBreakerOpen
         expr: app_circuitbreaker_state{job="ratelimitx"} == 2
         for: 1m
@@ -74,6 +81,24 @@ groups:
             The breaker has been out of the CLOSED state for 15 minutes. In the failure test it
             returned to CLOSED within seconds of Redis becoming reachable again, so this points
             at a Redis problem that is not fixing itself.
+
+      # The counter of decisions the fallback actually made. A state gauge can be back to CLOSED
+      # before an alert's 'for' window elapses, but the counter keeps the event for the length of
+      # the rate window, so this fires for outages too short to trip the gauge-based rule above.
+      # The failure test recorded 1,205 responses served this way during and after a 40 second
+      # pause, so the signal is real and not theoretical.
+      - alert: RateLimitXFallbackInUse
+        expr: >-
+          sum(rate(ratelimit_requests_total{job="ratelimitx",algorithm="local-fallback"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RateLimitX served requests from the local fallback"
+          description: >-
+            Rate limit decisions have been made by the per-instance in-memory fallback in the
+            last 5 minutes, which means Redis was unreachable. Limits were approximate and
+            per-replica while that lasted, even if the circuit breaker has since closed.
 
   - name: ratelimitx-behaviour
     rules:

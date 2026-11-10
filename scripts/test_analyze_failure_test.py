@@ -456,3 +456,50 @@ def test_render_explains_that_recovery_is_paced_by_the_open_timeout(tmp_path):
     text = render(tmp_path, environment, EVENTS, build_phases(), SAMPLES,
                   {"pollIntervalMs": 100})
     assert "not the time Redis took to come back" in text
+
+
+# ---------------------------------------------------------------------------
+# What the failover did to the enforced limit
+# ---------------------------------------------------------------------------
+
+
+def test_allowed_per_second_is_none_without_a_duration():
+    assert Phase("p", "", 0, None, [make_request(status=200)]).allowed_per_second is None
+
+
+def test_allowed_per_second_counts_only_admissions():
+    phase = Phase("p", "", 0, 10_000, [
+        make_request(seq=0, status=200),
+        make_request(seq=1, status=200),
+        make_request(seq=2, status=429),
+    ])
+    assert phase.allowed_per_second == pytest.approx(0.2)
+
+
+def _phases_with_rates(baseline_allowed: int, outage_allowed: int) -> list[Phase]:
+    return [
+        Phase("baseline", "", 0, 10_000,
+              [make_request(seq=i, status=200) for i in range(baseline_allowed)]),
+        Phase("outage", "", 10_000, 20_000,
+              [make_request(seq=100 + i, status=200) for i in range(outage_allowed)]),
+        Phase("recovery", "", 20_000, 30_000, []),
+    ]
+
+
+def test_a_more_generous_limit_during_the_outage_is_stated_plainly():
+    from analyze_failure_test import _admission_note
+    text = "\n".join(_admission_note(_phases_with_rates(10, 40)))
+    assert "more generous limit" in text
+    assert "1.0" in text and "4.0" in text
+
+
+def test_an_unchanged_admission_rate_is_not_dressed_up():
+    from analyze_failure_test import _admission_note
+    text = "\n".join(_admission_note(_phases_with_rates(40, 10)))
+    assert "did not raise the admission rate" in text
+    assert "more generous limit" not in text
+
+
+def test_the_admission_note_is_omitted_when_the_phases_are_missing():
+    from analyze_failure_test import _admission_note
+    assert _admission_note([Phase("baseline", "", 0, 10)]) == []
