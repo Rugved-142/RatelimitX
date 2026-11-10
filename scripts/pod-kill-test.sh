@@ -175,7 +175,18 @@ k8s_server="$(kubectl --context "$K8S_CONTEXT" version -o json 2>/dev/null \
   2>/dev/null || echo unknown)"
 grace="$(kube get deployment ratelimitx -o jsonpath='{.spec.template.spec.terminationGracePeriodSeconds}')"
 git_commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-git_dirty="$(test -n "$(git status --porcelain -- . ':!docs/pod-kill-tests' ':!docs/pod-kill-test.md' 2>/dev/null)" && echo true || echo false)"
+# Whether the code that produced this run was committed.
+#
+# Generated measurement output is excluded, all of it, not just this script's own. A run's
+# report is rewritten by the run itself, and a batch of runs would otherwise mark every run
+# after the first as unreproducible on the strength of the previous one's output. None of
+# these paths is source: they are what the source produced.
+GENERATED=(
+  ':!docs/benchmarks' ':!docs/benchmarks.md'
+  ':!docs/failure-tests' ':!docs/failure-test.md' ':!docs/failure-test-kubernetes.md'
+  ':!docs/pod-kill-tests' ':!docs/pod-kill-test.md'
+)
+git_dirty="$(test -n "$(git status --porcelain -- . "${GENERATED[@]}" 2>/dev/null)" && echo true || echo false)"
 
 python3 -I - "$OUT_ROOT/environment.json" <<PYEOF
 import json, sys

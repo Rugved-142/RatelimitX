@@ -1,8 +1,8 @@
 {
   "totals": {
     "requests": 2800,
-    "allowed": 2045,
-    "denied": 755,
+    "allowed": 1875,
+    "denied": 925,
     "serverErrors": 0,
     "noResponse": 0,
     "unexpected": 0,
@@ -10,88 +10,88 @@
     "servedByFallback": 1206
   },
   "transitions": {
-    "pauseToObservedOpenMs": 460,
-    "unpauseToObservedClosedMs": 20612,
-    "lastObservedOpenBeforeUnpauseToClosedMs": 30053,
+    "pauseToObservedOpenMs": 525,
+    "unpauseToObservedClosedMs": 20537,
+    "lastObservedOpenBeforeUnpauseToClosedMs": 30001,
     "observedStates": [
       {
         "state": "CLOSED",
-        "atMs": 1794333310494
+        "atMs": 1794333978994
       },
       {
         "state": "OPEN",
-        "atMs": 1794333340916
+        "atMs": 1794334009482
       },
       {
         "state": "HALF_OPEN",
-        "atMs": 1794333370976
+        "atMs": 1794334039518
       },
       {
         "state": "OPEN",
-        "atMs": 1794333371195
+        "atMs": 1794334039729
       },
       {
         "state": "CLOSED",
-        "atMs": 1794333401248
+        "atMs": 1794334069730
       }
     ]
   },
   "phases": [
     {
       "name": "baseline",
-      "durationSeconds": 30.044,
+      "durationSeconds": 30.048,
       "requests": 600,
       "allowed": 500,
       "denied": 100,
       "serverErrors": 0,
       "noResponse": 0,
       "unexpected": 0,
-      "allowedPerSecond": 16.642258021568367,
+      "allowedPerSecond": 16.64004259850905,
       "servedByFallback": 0,
       "latencyMs": {
         "p50": 6.0,
-        "p95": 9.0,
-        "p99": 10.0,
-        "max": 20.0,
+        "p95": 10.0,
+        "p99": 22.0,
+        "max": 54.0,
         "count": 600
       }
     },
     {
       "name": "outage",
-      "durationSeconds": 40.18,
-      "requests": 803,
-      "allowed": 801,
-      "denied": 2,
+      "durationSeconds": 40.236,
+      "requests": 804,
+      "allowed": 718,
+      "denied": 86,
       "serverErrors": 0,
       "noResponse": 0,
       "unexpected": 0,
-      "allowedPerSecond": 19.93529118964659,
-      "servedByFallback": 795,
+      "allowedPerSecond": 17.84471617457004,
+      "servedByFallback": 796,
       "latencyMs": {
         "p50": 5.0,
-        "p95": 7.0,
-        "p99": 16.0,
-        "max": 209.0,
-        "count": 803
+        "p95": 8.0,
+        "p99": 27.0,
+        "max": 212.0,
+        "count": 804
       }
     },
     {
       "name": "recovery",
-      "durationSeconds": 69.857,
-      "requests": 1397,
-      "allowed": 744,
-      "denied": 653,
+      "durationSeconds": 69.805,
+      "requests": 1396,
+      "allowed": 657,
+      "denied": 739,
       "serverErrors": 0,
       "noResponse": 0,
       "unexpected": 0,
-      "allowedPerSecond": 10.650328528279198,
-      "servedByFallback": 411,
+      "allowedPerSecond": 9.411933242604396,
+      "servedByFallback": 410,
       "latencyMs": {
         "p50": 5.0,
-        "p95": 7.0,
+        "p95": 8.0,
         "p99": 9.0,
-        "max": 40.0,
-        "count": 1397
+        "max": 54.0,
+        "count": 1396
       }
     }
   ]

@@ -1,11 +1,11 @@
 {
-  "loadStartedAtMs": 1794333220954,
-  "podDeletedAtMs": 1794333241037,
-  "deleteCommandReturnedAtMs": 1794333241088,
-  "podGoneAtMs": 1794333256993,
-  "endpointsRestoredAtMs": 1794333256938,
-  "loadFinishedAtMs": 1794333301040,
-  "deletedPod": "ratelimitx-cccc9d99d-748v4",
+  "loadStartedAtMs": 1794333889283,
+  "podDeletedAtMs": 1794333909376,
+  "deleteCommandReturnedAtMs": 1794333909432,
+  "podGoneAtMs": 1794333925494,
+  "endpointsRestoredAtMs": 1794333925435,
+  "loadFinishedAtMs": 1794333969388,
+  "deletedPod": "ratelimitx-5dc98bfb87-6nrbs",
   "replicas": 2,
   "note": "podDeletedAtMs is when the delete was issued, not when it completed. Every interval measured from it is therefore an upper bound."
 }
