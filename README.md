@@ -744,6 +744,30 @@ RateLimitX/
     └── simpleLoadTest.scala
 ```
 
+## Continuous Integration
+
+`.github/workflows/ci.yml` runs on pushes to `main` and `hardening`, on pull requests to `main`,
+and on demand. Two jobs:
+
+| Job | Does |
+|-----|------|
+| `build` | JDK 21 (Temurin) with a Maven cache, `./mvnw -B verify`, then uploads the surefire, failsafe and JaCoCo reports as artifacts |
+| `image` | `docker build`, then a Trivy scan of the resulting image, published to the log and as an artifact |
+
+Every action is pinned to a commit SHA rather than a tag, because a tag can be moved to point at
+different code. The readable version is kept in a trailing comment and Dependabot updates both
+together.
+
+The Trivy scan is **report-only**: it runs with `exit-code: 0`, so findings are published but do
+not fail the pipeline. That is deliberate for now — the image inherits vulnerabilities from its
+base image and from Spring Boot's own dependency set, and failing the build on them before they
+have been triaged would only train people to ignore a red pipeline. Once the findings have been
+read and the unavoidable ones accepted, set `exit-code` to `1` so new ones fail the build.
+
+Dependabot (`.github/dependabot.yml`) raises weekly updates for Maven dependencies, Docker base
+images and the workflow actions. Spring Boot's modules are grouped into a single pull request
+because they are released together and have to move together.
+
 ## Testing
 
 | Suite | Kind | Covers |
