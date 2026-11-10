@@ -151,3 +151,56 @@ def test_no_document_claims_an_availability_figure(path):
 
 def test_the_slo_document_says_plainly_that_no_objective_is_set():
     assert "no service level objective is set" in slo_text().lower()
+
+
+# ---------------------------------------------------------------------------
+# The run data the reports say is committed
+# ---------------------------------------------------------------------------
+
+
+def tracked_files() -> set[str]:
+    import subprocess
+    try:
+        output = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, capture_output=True,
+                                text=True, check=True, timeout=60).stdout
+    except (OSError, subprocess.SubprocessError):
+        pytest.skip("git is not available")
+    return set(output.splitlines())
+
+
+def run_readmes() -> list[Path]:
+    return sorted(
+        path
+        for parent in ("benchmarks", "failure-tests")
+        for path in (REPO_ROOT / "docs" / parent).glob("*/README.md")
+        if (REPO_ROOT / "docs" / parent).is_dir()
+    )
+
+
+@pytest.mark.parametrize("readme", run_readmes(),
+                         ids=lambda path: path.parent.parent.name + "/" + path.parent.name)
+def test_the_files_a_run_readme_lists_are_actually_committed(readme):
+    """A .gitignore rule once excluded simulation.log while the README still listed it.
+
+    A report that points at evidence which was never committed is worse than one that points at
+    nothing, because the reader has no way to tell. This walks the file table in each run's
+    README and checks that something matching each name is tracked by git.
+    """
+    tracked = tracked_files()
+    run_dir = readme.parent.relative_to(REPO_ROOT).as_posix()
+    listed = re.findall(r"^\| `([^`]+)` \|", readme.read_text(encoding="utf-8"),
+                        flags=re.MULTILINE)
+    assert listed, f"{readme} lists no files"
+
+    # run-N stands for each per-run subdirectory that actually exists, so a file committed for
+    # run-2 cannot cover a file missing from run-1.
+    run_dirs = sorted(path.name for path in readme.parent.glob("run-*") if path.is_dir())
+
+    missing = []
+    for entry in listed:
+        for expanded in ([entry.replace("run-N", name) for name in run_dirs]
+                         if "run-N" in entry else [entry]):
+            pattern = re.escape(run_dir + "/" + expanded).replace(r"\*", "[^/]*")
+            if not any(re.fullmatch(pattern, path) for path in tracked):
+                missing.append(expanded)
+    assert not missing, f"{run_dir}/README.md lists files git does not track: {missing}"

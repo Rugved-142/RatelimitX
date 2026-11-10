@@ -27,6 +27,12 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 
+# ...but not the raw records saved as benchmark and failure-test evidence. docs/benchmarks.md and
+# docs/failure-test.md both state that the raw output is committed, and the run READMEs list
+# these files by name, so the blanket *.log rule above must not quietly make that untrue.
+!docs/benchmarks/**/*.log
+!docs/failure-tests/**/*.log
+
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
