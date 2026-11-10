@@ -45,9 +45,9 @@ and requests that received no response at all.
 | Requests with no response (client timeouts and connection errors) | 0 |
 | Other unexpected statuses | 0 |
 | Total failures | 0 (0.0%) |
-| Pause to breaker observed OPEN | 425 ms |
-| Unpause to breaker observed CLOSED | 20,598 ms |
-| Breaker's last entry into OPEN, to observed CLOSED | 30,129 ms |
+| Pause to breaker observed OPEN | 460 ms |
+| Unpause to breaker observed CLOSED | 20,612 ms |
+| Breaker's last entry into OPEN, to observed CLOSED | 30,053 ms |
 
 The time to close is not the time Redis took to come back. The breaker only lets a
 probe through once its open timeout has elapsed, so recovery is paced by that timer
@@ -68,9 +68,9 @@ A request belongs to the phase it was *sent* in.
 
 | Phase | Duration | Requests | 200 | 429 | 5xx | No response | Allowed/s | Served by fallback |
 |-------|----------|----------|-----|-----|-----|-------------|-----------|--------------------|
-| baseline | 30.0 s | 599 | 500 | 99 | 0 | 0 | 16.7 | 0 |
-| outage | 40.1 s | 803 | 802 | 1 | 0 | 0 | 20.0 | 796 |
-| recovery | 69.9 s | 1,398 | 696 | 702 | 0 | 0 | 10.0 | 409 |
+| baseline | 30.0 s | 600 | 500 | 100 | 0 | 0 | 16.6 | 0 |
+| outage | 40.2 s | 803 | 801 | 2 | 0 | 0 | 19.9 | 795 |
+| recovery | 69.9 s | 1,397 | 744 | 653 | 0 | 0 | 10.7 | 411 |
 
 `Served by fallback` counts responses whose `X-Algorithm` header was `local-fallback`,
 which is the service reporting on itself rather than an inference from the timing.
@@ -81,8 +81,8 @@ The fallback keeps its own counters and cannot read Redis's, so when the
 breaker opens every caller starts a fresh window on this instance however much
 of their Redis window they had already spent.
 
-That is visible here: admissions went from 16.7 per second while
-Redis was up to 20.0 per second while it was frozen, against a
+That is visible here: admissions went from 16.6 per second while
+Redis was up to 19.9 per second while it was frozen, against a
 configured limit that did not change. The service kept answering, which is
 the point of the fallback, but it was enforcing a more generous limit than
 the one it is configured with, and it says so in the `X-Algorithm` header
@@ -96,9 +96,9 @@ answer.
 
 | Phase | Responses | p50 | p95 | p99 | max |
 |-------|-----------|-----|-----|-----|-----|
-| baseline | 599 | 8 ms | 11 ms | 14 ms | 41 ms |
-| outage | 803 | 6 ms | 8 ms | 19 ms | 211 ms |
-| recovery | 1,398 | 6 ms | 8 ms | 10 ms | 26 ms |
+| baseline | 600 | 6 ms | 9 ms | 10 ms | 20 ms |
+| outage | 803 | 5 ms | 7 ms | 16 ms | 209 ms |
+| recovery | 1,397 | 5 ms | 7 ms | 9 ms | 40 ms |
 
 ## Circuit breaker timeline
 
@@ -106,14 +106,13 @@ Times are relative to the moment Redis was paused. A negative value is before it
 
 | Observed state | Relative to pause |
 |----------------|-------------------|
-| CLOSED | -29.9 s |
-| OPEN | +0.4 s |
-| HALF_OPEN | +30.4 s |
-| OPEN | +30.6 s |
-| HALF_OPEN | +60.6 s |
-| CLOSED | +60.7 s |
+| CLOSED | -30.0 s |
+| OPEN | +0.5 s |
+| HALF_OPEN | +30.5 s |
+| OPEN | +30.7 s |
+| CLOSED | +60.8 s |
 
-Polls recorded: 1,282, of which 0 got no answer.
+Polls recorded: 1,300, of which 0 got no answer.
 
 ## What this does not show
 
@@ -132,14 +131,15 @@ Polls recorded: 1,282, of which 0 got no answer.
 
 | Item | Value |
 |------|-------|
-| Captured | 2026-11-10T17:03:12Z |
+| Captured | 2026-11-10T17:55:10Z |
 | OS | macOS 27.0.1 |
 | CPU | Apple M3 Pro (11 logical) |
-| Platform | not measured |
-| Application replicas | not measured |
+| Platform | compose |
+| Application replicas | 1 |
+| Redis container restarts during the run | none |
 | Docker engine | 29.6.2 |
-| Commit | `4b296042656467279e782ae28681f4391eb9081d` |
-| Source at run time | committed, excluding this run's own output |
+| Commit | `dee8ceb92da8e402c326fff274fe5c1f873fcd23` |
+| Source at run time | **uncommitted changes present** |
 
 ## Reproducing this
 

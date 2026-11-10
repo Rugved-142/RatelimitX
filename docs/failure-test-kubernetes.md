@@ -51,9 +51,9 @@ and requests that received no response at all.
 | Requests with no response (client timeouts and connection errors) | 0 |
 | Other unexpected statuses | 0 |
 | Total failures | 0 (0.0%) |
-| Pause to breaker observed OPEN | 664 ms |
-| Unpause to breaker observed CLOSED | 20,619 ms |
-| Breaker's last entry into OPEN, to observed CLOSED | 30,045 ms |
+| Pause to breaker observed OPEN | 1,009 ms |
+| Unpause to breaker observed CLOSED | 21,544 ms |
+| Breaker's last entry into OPEN, to observed CLOSED | 30,020 ms |
 
 The time to close is not the time Redis took to come back. The breaker only lets a
 probe through once its open timeout has elapsed, so recovery is paced by that timer
@@ -75,8 +75,8 @@ A request belongs to the phase it was *sent* in.
 | Phase | Duration | Requests | 200 | 429 | 5xx | No response | Allowed/s | Served by fallback |
 |-------|----------|----------|-----|-----|-----|-------------|-----------|--------------------|
 | baseline | 30.1 s | 599 | 500 | 99 | 0 | 0 | 16.6 | 0 |
-| outage | 40.3 s | 805 | 802 | 3 | 0 | 0 | 19.9 | 795 |
-| recovery | 69.8 s | 1,396 | 1,034 | 362 | 0 | 0 | 14.8 | 412 |
+| outage | 40.2 s | 805 | 802 | 3 | 0 | 0 | 19.9 | 795 |
+| recovery | 69.8 s | 1,396 | 1,075 | 321 | 0 | 0 | 15.4 | 421 |
 
 `Served by fallback` counts responses whose `X-Algorithm` header was `local-fallback`,
 which is the service reporting on itself rather than an inference from the timing.
@@ -102,9 +102,9 @@ answer.
 
 | Phase | Responses | p50 | p95 | p99 | max |
 |-------|-----------|-----|-----|-----|-----|
-| baseline | 599 | 6 ms | 15 ms | 110 ms | 385 ms |
-| outage | 805 | 4 ms | 8 ms | 204 ms | 215 ms |
-| recovery | 1,396 | 4 ms | 8 ms | 11 ms | 45 ms |
+| baseline | 599 | 5 ms | 9 ms | 11 ms | 32 ms |
+| outage | 805 | 4 ms | 8 ms | 204 ms | 208 ms |
+| recovery | 1,396 | 4 ms | 8 ms | 10 ms | 44 ms |
 
 ## Circuit breaker timeline
 
@@ -112,13 +112,14 @@ Times are relative to the moment Redis was paused. A negative value is before it
 
 | Observed state | Relative to pause |
 |----------------|-------------------|
-| CLOSED | -29.9 s |
-| OPEN | +0.7 s |
-| HALF_OPEN | +30.6 s |
-| OPEN | +30.8 s |
-| CLOSED | +60.9 s |
+| CLOSED | -30.0 s |
+| OPEN | +1.0 s |
+| HALF_OPEN | +31.0 s |
+| OPEN | +31.7 s |
+| HALF_OPEN | +61.7 s |
+| CLOSED | +61.8 s |
 
-Polls recorded: 1,275, of which 0 got no answer.
+Polls recorded: 1,281, of which 0 got no answer.
 
 ## What this does not show
 
@@ -143,17 +144,17 @@ Polls recorded: 1,275, of which 0 got no answer.
 
 | Item | Value |
 |------|-------|
-| Captured | 2026-11-10T17:33:39Z |
+| Captured | 2026-11-10T17:50:51Z |
 | OS | macOS 27.0.1 |
 | CPU | Apple M3 Pro (11 logical) |
 | Platform | kubernetes |
 | Application replicas | 2 |
 | Kubernetes server | v1.37.0 |
 | Node image | Debian GNU/Linux 13 (trixie) |
-| Pod whose breaker was timed | ratelimitx-6f88db576-6vbx2 |
+| Pod whose breaker was timed | ratelimitx-664b6ff979-bkxq2 |
 | Redis container restarts during the run | none |
 | Docker engine | 29.6.2 |
-| Commit | `189a2d43611f69c1f888d8cea95476d9f6ff9a8b` |
+| Commit | `dee8ceb92da8e402c326fff274fe5c1f873fcd23` |
 | Source at run time | **uncommitted changes present** |
 
 ## Reproducing this

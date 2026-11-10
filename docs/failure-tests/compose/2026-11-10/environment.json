@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-11-10T17:03:12Z",
+  "capturedAt": "2026-11-10T17:55:10Z",
   "label": "",
   "host": {
     "os": "macOS 27.0.1",
@@ -17,9 +17,15 @@
     "engine": "29.6.2",
     "compose": "5.3.1"
   },
+  "platform": {
+    "name": "compose",
+    "kubernetesServer": "n/a",
+    "nodeOsImage": "n/a",
+    "appReplicas": "1"
+  },
   "repository": {
-    "commit": "4b296042656467279e782ae28681f4391eb9081d",
-    "uncommittedChanges": false
+    "commit": "dee8ceb92da8e402c326fff274fe5c1f873fcd23",
+    "uncommittedChanges": true
   },
   "parameters": {
     "algorithm": "sliding-window",

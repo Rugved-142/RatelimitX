@@ -1,9 +1,10 @@
 {
-  "startedAtMs": 1794330192947,
-  "finishedAtMs": 1794330332908,
+  "startedAtMs": 1794333310493,
+  "finishedAtMs": 1794333450450,
   "requestedRatePerSecond": 20.0,
   "durationSeconds": 140.0,
   "pollIntervalMs": 100,
+  "circuitBaseUrl": "http://localhost:8080",
   "users": [
     "failureload1",
     "failureload2",
