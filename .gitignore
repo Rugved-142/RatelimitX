@@ -175,3 +175,7 @@ vite.config.ts.timestamp-*
 k8s/secret*.yaml
 k8s/*-secret.yaml
 k8s/**/secret*.yaml
+
+# Python bytecode from the analysis scripts.
+__pycache__/
+*.py[cod]
