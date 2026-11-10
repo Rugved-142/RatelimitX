@@ -38,7 +38,9 @@ DB_CONTAINER="${RLX_DB_CONTAINER:-ratelimitx-postgres}"
 # A unique user per run, so a second run is not defeated by the first one's registration and so
 # the rate limit counters start empty. The password is only ever used against this local stack.
 SMOKE_USER="smoke$(date +%s)$$"
-SMOKE_PASSWORD="smoke-test-password-123"
+# Generated per run. The username above is already unique per run, so nothing has to be
+# cleared first; this just keeps a password out of a tracked file.
+SMOKE_PASSWORD="$(openssl rand -hex 24)"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -85,7 +87,7 @@ status_of() {
   curl -s -o /dev/null -w '%{http_code}' "$@" || true
 }
 
-for tool in curl python3; do
+for tool in curl python3 openssl; do
   command -v "$tool" >/dev/null 2>&1 || { echo "required tool not found: $tool" >&2; exit 1; }
 done
 

@@ -237,6 +237,33 @@ def summarise(values: Iterable[float | None]) -> str:
 # ---------------------------------------------------------------------------
 
 
+def offered_load(parameters: dict[str, Any]) -> tuple[int, float, float] | None:
+    """Requests the injection profile offers, how long it runs, and the average rate.
+
+    Open-model injection imposes an arrival rate, so the offered total is arithmetic from the
+    profile rather than something to be measured: the warm-up plus each step. It matters because
+    when the service answers all of it, the measured decisions per second is that arrival rate
+    and nothing more - see the note this feeds in render().
+    """
+    try:
+        warmup = float(parameters["warmupSeconds"])
+        start = float(parameters["rpsStart"])
+        step = float(parameters["rpsStep"])
+        steps = int(parameters["rpsSteps"])
+        step_seconds = float(parameters["stepSeconds"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if steps < 1:
+        return None
+    total = warmup * start
+    for index in range(steps):
+        total += step_seconds * (start + index * step)
+    duration = warmup + steps * step_seconds
+    if duration <= 0:
+        return None
+    return int(round(total)), duration, total / duration
+
+
 def render(environment: dict[str, Any], runs: list[RunResult], results_dir: Path) -> str:
     successful = [run for run in runs if run.succeeded]
     parameters = environment.get("parameters", {})
@@ -294,6 +321,35 @@ def render(environment: dict[str, Any], runs: list[RunResult], results_dir: Path
     add("Latency percentiles cover every response, allowed and denied alike. A denial is cheaper")
     add("to produce than an admission, so a heavily denied run has a lower latency profile than a")
     add("lightly loaded one; the two are not comparable.")
+    add("")
+
+    # The figure readers are most likely to misuse. Say what it is before showing it.
+    offered = offered_load(parameters)
+    answered = successful and all(
+        (run.ko_requests or 0) == 0 and (run.unexpected or 0) == 0 for run in successful)
+    add("### Decisions per second is not a capacity figure")
+    add("")
+    if offered is None:
+        add("The load profile for this run was not recorded in full, so the offered rate cannot be")
+        add(f"derived from it: {NOT_MEASURED}. Treat the throughput figure below as a floor.")
+    else:
+        total_offered, duration, rate = offered
+        add("Injection is open-model, so the arrival rate is imposed rather than observed. This")
+        add(f"profile offers {fmt_number(total_offered, 0)} requests over "
+            f"{fmt_number(duration, 0)} seconds, an average of")
+        add(f"**{fmt_number(rate)} per second**.")
+        add("")
+        if answered:
+            add("Every one of them was answered - no failures and no unexpected statuses in any")
+            add("usable run - so the decisions per second below is that offered rate and nothing")
+            add("more. It says the service kept up with the load it was given. It does not say")
+            add("what the service's limit is, because the load never found one: raising the")
+            add("offered rate would raise the figure. Finding a ceiling means driving the service")
+            add("until something gives, which this benchmark does not do.")
+        else:
+            add("Not every offered request was answered in every run, so the decisions per second")
+            add("below is lower than the offered rate. Check the per-run table for which runs")
+            add("were affected before reading the summary.")
     add("")
 
     # --- results ------------------------------------------------------------

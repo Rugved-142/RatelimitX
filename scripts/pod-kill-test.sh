@@ -36,7 +36,16 @@ USER_LIMIT="${RLX_USER_LIMIT:-5000}"
 LABEL=""
 
 TEST_USER="podkill1"
-TEST_PASSWORD="pod-kill-password-123"
+# Generated per run, not a literal.
+#
+# These accounts live for one run on a local stack, so the value hardly matters - but a password
+# sitting in a tracked file is a password, and grep does not care what it was for. Generated
+# fresh each time instead.
+#
+# The accounts are reused by name across runs, so the rows are dropped before registering:
+# otherwise the second run would register nothing and then try this run's password against last
+# run's stored hash.
+TEST_PASSWORD="$(openssl rand -hex 24)"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -58,7 +67,7 @@ DATE_DIR="$(date -u +%Y-%m-%d)"
 OUT_ROOT="docs/pod-kill-tests/$DATE_DIR"
 mkdir -p "$OUT_ROOT"
 
-for tool in kubectl curl python3; do
+for tool in kubectl curl python3 openssl; do
   command -v "$tool" >/dev/null 2>&1 || { echo "required tool not found: $tool" >&2; exit 1; }
 done
 
@@ -107,6 +116,11 @@ wait_for_ready_endpoints "$REPLICAS" 120 || { echo "endpoints never became ready
 # ---------------------------------------------------------------------------
 
 log "Preparing the load user"
+kube exec -i statefulset/postgres -- sh -c \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -q' <<SQL
+DELETE FROM users WHERE username='$TEST_USER';
+SQL
+
 curl -s -o /dev/null -X POST "$BASE_URL/auth/register" \
   -H 'Content-Type: application/json' \
   -d "{\"username\":\"$TEST_USER\",\"email\":\"$TEST_USER@pod-kill.invalid\",\"password\":\"$TEST_PASSWORD\"}" \

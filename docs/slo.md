@@ -30,20 +30,44 @@ degraded-but-fine one.
 
 Each figure links to the run that produced it. Nothing here is a target.
 
+Every figure in this table is checked against the run that produced it by
+`scripts/test_docs_consistency.py`. Nothing outside this table quotes a measured figure, so a
+re-run cannot leave a stale number in the prose below.
+
 | Indicator | Measured | Conditions | Source |
 |-----------|----------|------------|--------|
-| Decision latency, p50 | 1 ms | 16 users, stepped 50-150 req/s, sliding window | [benchmarks](benchmarks.md) |
+| Decision latency, p50 | 1 ms | 16 users, four steps from 50 to 200 req/s, sliding window | [benchmarks](benchmarks.md) |
 | Decision latency, p95 | 2 ms | as above | [benchmarks](benchmarks.md) |
 | Decision latency, p99 | 3 ms | as above | [benchmarks](benchmarks.md) |
-| Decision throughput | 118.8 decisions/s | a floor: the offered rate never exceeded 200/s and the load generator shared the machine | [benchmarks](benchmarks.md) |
-| Failures during a 40 s Redis outage | 0 of 2,800 requests | 5 users at 20 req/s, Redis frozen with `docker compose pause` | [failure test](failure-test.md) |
+| Decisions per second | 118.8 decisions/s | **not a capacity figure** - see below | [benchmarks](benchmarks.md) |
+| Denied share of decisions | 85.3% | by design: the per-minute caps are far below the offered rate | [benchmarks](benchmarks.md) |
+| Failures during a 40 s Redis outage | 0 of 2,800 requests | the whole run, of which 803 requests were sent while Redis was frozen | [failure test](failure-test.md) |
 | Redis failure to breaker OPEN | 396 ms | upper bound; polled every 100 ms | [failure test](failure-test.md) |
-| Breaker OPEN to CLOSED once Redis returned | 30,055 ms | paced by the configured 30 s open timeout, not by Redis | [failure test](failure-test.md) |
+| Breaker OPEN to CLOSED once Redis returned | 30,055 ms | paced by the breaker's own open timeout, not by Redis | [failure test](failure-test.md) |
 | Requests served by the local fallback | 1,206 | during and after the 40 s pause | [failure test](failure-test.md) |
+| Failures while a replica was deleted under load | 0 of 1,600 requests | two replicas, one deleted mid-run | [pod kill test](pod-kill-test.md) |
+| Response time p99 while a replica was missing | 1,858 ms | same run, disruption phase | [pod kill test](pod-kill-test.md) |
+| Response time p99 after the replacement joined | 1,009 ms | same run, once the Service was back to full strength | [pod kill test](pod-kill-test.md) |
 
-The two latency figures were produced under a load shape that denied 85.3% of requests by design.
-A denial is cheaper to serve than an admission, so these are not comparable with a lightly loaded
-service's latency. The benchmark document says so at more length.
+### Reading those figures
+
+**Decisions per second is not a throughput limit.** Every request offered during the benchmark
+was answered, so the figure is simply the average rate at which load was offered, divided by the
+run. Raising the offered rate would raise it. It establishes a floor the service clears, not a
+ceiling it reaches, and the only way to find the ceiling is to drive it until something gives,
+which has not been done. The benchmark document derives the offered rate from the load profile
+and says the same thing.
+
+**The latency figures come from a heavily denied run.** A denial is cheaper to serve than an
+admission - it does less work and returns a shorter body - so a run where most requests are
+denied has a lower latency profile than a lightly loaded one. These are not comparable with a
+service answering mostly 200s.
+
+**No failures is not the same as no impact.** The pod kill run recorded zero failed requests and,
+in the same run, a p99 of roughly two seconds while the replica was missing and roughly one
+second after the replacement joined, against a p99 in the low tens of milliseconds before the
+deletion. A JVM that has just started is slow for its first requests, and a readiness probe
+establishes that a pod answers, not that it is warm. A caller saw no errors and did wait.
 
 ## What the alerts watch
 
@@ -59,13 +83,14 @@ human; routing them is a deployment concern this repository does not pretend to 
 | `RateLimitXCircuitBreakerOpen` | enforced limit | breaker OPEN for 1 m | longer than the 30 s open timeout, so a recovered blip does not page |
 | `RateLimitXCircuitBreakerNotRecovering` | enforced limit | breaker out of CLOSED for 15 m | it closed within seconds of Redis returning in the failure test |
 | `RateLimitXFallbackInUse` | enforced limit | any fallback decision in 5 m | catches outages too short to trip the rule above |
-| `RateLimitXNearTotalDenial` | behaviour | over 95% denied for 15 m | the benchmark denied 85.3% by design, so the threshold sits near total |
-| `RateLimitXHighLatency` | latency | p95 on `/api/data` over 250 ms for 10 m | a round number with headroom over the measured 5 ms p95; not an objective |
+| `RateLimitXNearTotalDenial` | behaviour | over 95% denied for 15 m | set near total, because the measured denial share above is normal operation |
+| `RateLimitXHighLatency` | latency | p95 on `/api/data` over 250 ms for 10 m | a round number well above every p95 and every maximum in any committed run; not an objective |
 
-Two of those thresholds are explicitly judgement rather than measurement. 250 ms is roughly fifty
-times the measured p95 and above every maximum in any committed run; it was chosen so the rule
-does not fire in normal operation, and it should be re-derived on real deployment hardware. The
-95% denial threshold is set near total because a high denial ratio is a rate limiter working.
+Two of those thresholds are judgement rather than measurement, and say so in the rule file. The
+latency threshold was chosen to sit far enough above everything observed that the rule does not
+fire in normal operation; it is not derived from a target and it should be re-derived on real
+deployment hardware. The denial threshold is set near total because a high denial ratio is a rate
+limiter working, not a rate limiter failing.
 
 ### A measured gap in the alerting
 

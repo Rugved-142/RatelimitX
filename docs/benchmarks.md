@@ -25,6 +25,19 @@ Latency percentiles cover every response, allowed and denied alike. A denial is 
 to produce than an admission, so a heavily denied run has a lower latency profile than a
 lightly loaded one; the two are not comparable.
 
+### Decisions per second is not a capacity figure
+
+Injection is open-model, so the arrival rate is imposed rather than observed. This
+profile offers 15,500 requests over 130 seconds, an average of
+**119.2 per second**.
+
+Every one of them was answered - no failures and no unexpected statuses in any
+usable run - so the decisions per second below is that offered rate and nothing
+more. It says the service kept up with the load it was given. It does not say
+what the service's limit is, because the load never found one: raising the
+offered rate would raise the figure. Finding a ceiling means driving the service
+until something gives, which this benchmark does not do.
+
 ## Results
 
 Median across the usable runs, with the range in brackets.

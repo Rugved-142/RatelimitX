@@ -516,3 +516,179 @@ def test_the_readme_quotes_no_measured_figure(pattern):
 def test_the_readme_says_where_its_claims_are_mapped():
     assert "docs/claims.md" in readme_text(), \
         "README.md does not point at docs/claims.md"
+
+
+# ---------------------------------------------------------------------------
+# Every measured figure in slo.md, not just the ones someone thought to check
+#
+# The checks further up test named figures one at a time, which only catches what was listed.
+# These two are the general rule: slo.md may state a measured figure only if that figure can be
+# found in a generated report, and the headline table has to agree with the runs row by row.
+# Otherwise slo.md may only link to the reports.
+# ---------------------------------------------------------------------------
+
+
+GENERATED_REPORTS = [
+    REPO_ROOT / "docs" / "benchmarks.md",
+    REPO_ROOT / "docs" / "failure-test.md",
+    REPO_ROOT / "docs" / "failure-test-kubernetes.md",
+    REPO_ROOT / "docs" / "pod-kill-test.md",
+]
+
+#: Thresholds and durations are configuration, not measurements. A figure that appears in one of
+#: these is a setting slo.md is describing, and does not have to be traceable to a run.
+CONFIGURATION_SOURCES = [
+    REPO_ROOT / "prometheus" / "rules" / "ratelimitx.rules.yml",
+    REPO_ROOT / "src" / "main" / "resources" / "application.properties",
+]
+
+#: A number carrying one of these units is a measurement, wherever it appears.
+MEASURED_UNIT = re.compile(
+    r"([0-9][0-9,]*(?:\.[0-9]+)?)\s*"
+    r"(?:ms\b|milliseconds\b|seconds\b|s\b|%|per second|decisions/s|req/s|requests\b)",
+    re.IGNORECASE,
+)
+
+
+def evidence_text() -> str:
+    """The rendered reports, and only those.
+
+    Deliberately not the raw summary.json and environment.json: they hold epoch timestamps and
+    byte counts, and a substring search against those matches almost any digit sequence. An
+    invented figure sailed through this check until the JSON came out of it.
+    """
+    return "\n".join(path.read_text(encoding="utf-8")
+                      for path in GENERATED_REPORTS if path.is_file())
+
+
+def states_figure(haystack: str, figure: str) -> bool:
+    """Whether `haystack` states `figure` as a number in its own right.
+
+    Matched on a token boundary, in both the comma-grouped and bare forms, so that 1,858 is not
+    satisfied by 11,858 and 396 is not satisfied by 1396.
+    """
+    for form in {figure, figure.replace(",", "")}:
+        if re.search(r"(?<![0-9.,])" + re.escape(form) + r"(?![0-9])", haystack):
+            return True
+        stripped = re.sub(r"[,]", "", haystack)
+        if re.search(r"(?<![0-9.,])" + re.escape(form.replace(",", "")) + r"(?![0-9])", stripped):
+            return True
+    return False
+
+
+def configuration_text() -> str:
+    return "\n".join(path.read_text(encoding="utf-8")
+                     for path in CONFIGURATION_SOURCES if path.is_file())
+
+
+def test_every_measured_figure_in_slo_md_is_in_a_generated_report():
+    """slo.md is hand-written; the reports are generated from committed raw data.
+
+    A figure in slo.md that no report contains is either stale or invented. The alternative this
+    document is allowed to take is to link to the report instead of quoting it.
+    """
+    if not CLAIMS.is_file() and not SLO.is_file():
+        pytest.skip("docs/slo.md is not present")
+    evidence = evidence_text()
+    configuration = configuration_text()
+    if not evidence:
+        pytest.skip("no generated reports to check against")
+
+    unsupported = []
+    for figure in MEASURED_UNIT.findall(slo_text()):
+        bare = figure.replace(",", "")
+        if bare in {"0", "1", "2", "3", "5", "10", "15"}:
+            # Single digits are durations and counts in prose ("for 15 m", "0 failures"); they
+            # carry no information worth tracing and would match almost anything.
+            continue
+        if states_figure(evidence, figure) or states_figure(configuration, figure):
+            continue
+        unsupported.append(figure)
+    assert not unsupported, (
+        f"docs/slo.md states figures that no generated report or configuration file contains: "
+        f"{unsupported}. Either they are stale, or slo.md should link to the report instead."
+    )
+
+
+def slo_measured_rows() -> dict[str, str]:
+    """The 'What has been measured' table, as {indicator: measured value}."""
+    rows: dict[str, str] = {}
+    inside = False
+    for line in SLO.read_text(encoding="utf-8").splitlines():
+        if line.startswith("| Indicator "):
+            inside = True
+            continue
+        if inside:
+            if not line.startswith("|"):
+                break
+            cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+            if len(cells) < 2 or set(cells[0]) <= set("- "):
+                continue
+            rows[cells[0]] = cells[1]
+    return rows
+
+
+def test_the_measured_table_agrees_with_the_runs_row_by_row():
+    if not SLO.is_file():
+        pytest.skip("docs/slo.md is not present")
+    rows = slo_measured_rows()
+    assert rows, "docs/slo.md has no 'What has been measured' table"
+
+    compose = latest_failure_summary()
+    kill = pod_kill_summary()
+    kill_phases = {phase["name"]: phase for phase in kill["phases"]}
+
+    def bench(label: str) -> str:
+        return benchmark_row(label).split(" ")[0]
+
+    expected = {
+        "Decision latency, p50": bench("Response time p50 (ms)") + " ms",
+        "Decision latency, p95": bench("Response time p95 (ms)") + " ms",
+        "Decision latency, p99": bench("Response time p99 (ms)") + " ms",
+        "Decisions per second": bench("Decisions per second") + " decisions/s",
+        "Denied share of decisions": bench("Denied share of decisions (%)") + "%",
+        "Failures during a 40 s Redis outage":
+            f"{compose['totals']['failures']:,} of {compose['totals']['requests']:,} requests",
+        "Redis failure to breaker OPEN":
+            f"{compose['transitions']['pauseToObservedOpenMs']:,} ms",
+        "Breaker OPEN to CLOSED once Redis returned":
+            f"{compose['transitions']['lastObservedOpenBeforeUnpauseToClosedMs']:,} ms",
+        "Requests served by the local fallback":
+            f"{compose['totals']['servedByFallback']:,}",
+        "Failures while a replica was deleted under load":
+            f"{kill['totals']['failures']:,} of {kill['totals']['requests']:,} requests",
+        "Response time p99 while a replica was missing":
+            f"{kill_phases['disruption']['latencyMs']['p99']:,.0f} ms",
+        "Response time p99 after the replacement joined":
+            f"{kill_phases['after']['latencyMs']['p99']:,.0f} ms",
+    }
+
+    missing = sorted(set(expected) - set(rows))
+    assert not missing, f"docs/slo.md no longer states: {missing}"
+
+    wrong = {label: (rows[label], value) for label, value in expected.items()
+             if rows[label].replace("**", "") != value}
+    assert not wrong, (
+        "docs/slo.md disagrees with the committed runs, as {indicator: (stated, measured)}: "
+        f"{wrong}"
+    )
+
+
+def test_the_slo_table_has_no_row_without_a_check():
+    """A row nobody checks is a figure free to go stale, which is the whole problem."""
+    if not SLO.is_file():
+        pytest.skip("docs/slo.md is not present")
+    checked = {
+        "Decision latency, p50", "Decision latency, p95", "Decision latency, p99",
+        "Decisions per second", "Denied share of decisions",
+        "Failures during a 40 s Redis outage", "Redis failure to breaker OPEN",
+        "Breaker OPEN to CLOSED once Redis returned", "Requests served by the local fallback",
+        "Failures while a replica was deleted under load",
+        "Response time p99 while a replica was missing",
+        "Response time p99 after the replacement joined",
+    }
+    unchecked = sorted(set(slo_measured_rows()) - checked)
+    assert not unchecked, (
+        f"docs/slo.md states figures nothing checks: {unchecked}. Add them to "
+        "test_the_measured_table_agrees_with_the_runs_row_by_row or take them out."
+    )

@@ -103,9 +103,13 @@ groups:
   - name: ratelimitx-behaviour
     rules:
       # A high denial ratio is the normal, correct behaviour of a rate limiter under load: the
-      # committed benchmark denied 82.9% of decisions by design. So this threshold is set close
-      # to total - almost nothing getting through usually means a limit was misconfigured or a
-      # caller is stuck in a retry loop, not that the limiter is working.
+      # committed benchmark denies most decisions by design, because the per-minute caps sit far
+      # below the offered rate. The measured share is in docs/slo.md and is not repeated here: a
+      # figure copied into a comment goes stale the next time the benchmark runs.
+      #
+      # So this threshold is set close to total - almost nothing getting through usually means a
+      # limit was misconfigured or a caller is stuck in a retry loop, not that the limiter is
+      # working.
       #
       # The second clause requires meaningful traffic: without it, two denied requests in an idle
       # five minutes would be a 100% denial ratio and would fire.
@@ -125,19 +129,25 @@ groups:
           summary: "RateLimitX is denying over 95% of requests"
           description: >-
             Over 95% of rate limit decisions have been denials for 15 minutes. Denials are normal
-            for a rate limiter - the committed benchmark denied 82.9% by design - so this is set
-            near total, where a misconfigured limit or a client retry loop is the likelier
+            for a rate limiter, and the committed benchmark denies most of them by design, so this
+            is set near total, where a misconfigured limit or a client retry loop is the likelier
             explanation.
 
       # p95 of the whole /api/data request, measured from the histogram Micrometer publishes for
       # http.server.requests.
       #
-      # Threshold derivation: the committed benchmark measured a p95 of 5 ms and a maximum of
-      # 38 ms on the benchmark machine, with the load generator competing for the same CPUs. 250
-      # ms is roughly fifty times that p95 and above every maximum observed in any committed run,
-      # so it should not fire on normal operation. It is a round number chosen for headroom, not
-      # a service level objective, and no SLO is claimed from it. Re-derive it on the hardware
-      # you actually deploy to.
+      # Threshold derivation: 250 ms sits well above every p95 and every maximum recorded in any
+      # committed run, on a machine where the load generator competed with the service for CPU, so
+      # it should not fire in normal operation. The measured figures are in docs/slo.md and
+      # docs/benchmarks.md rather than copied here, where they would go stale on the next run.
+      #
+      # It is a round number chosen for headroom, not a service level objective, and no SLO is
+      # claimed from it. Re-derive it on the hardware you actually deploy to.
+      #
+      # One caveat from the pod kill test: a replacement pod that is still warming up produced a
+      # p99 of around two seconds. A rollout can therefore trip this rule legitimately. 'for: 10m'
+      # is longer than that warm-up lasted, but on slower hardware decide deliberately whether a
+      # rollout should page.
       - alert: RateLimitXHighLatency
         expr: >-
           histogram_quantile(
@@ -152,6 +162,6 @@ groups:
         annotations:
           summary: "RateLimitX p95 latency on /api/data is above 250 ms"
           description: >-
-            p95 over the last 5 minutes has exceeded 250 ms for 10 minutes. The committed
-            benchmark measured 5 ms on the benchmark machine; see docs/benchmarks.md for the
-            conditions that figure was produced under.
+            p95 over the last 5 minutes has exceeded 250 ms for 10 minutes, far above anything
+            recorded in a committed run. See docs/benchmarks.md for the measured figures and the
+            conditions they were produced under.

@@ -67,6 +67,20 @@ response time.
 | disruption | 317 | 5 ms | 9 ms | 1,858 ms | 2,054 ms |
 | after | 882 | 6 ms | 11 ms | 1,009 ms | 1,703 ms |
 
+#### No failures is not the same as no impact
+
+Every request in this run was answered - 0 failures - and
+some callers waited a long time for it. p99 went from
+17 ms before the deletion to 1,858 ms while
+the replica was missing, and was still 1,009 ms after the
+replacement had joined the Service.
+
+A JVM that has just started is slow for its first requests, and a readiness
+probe establishes that a pod answers, not that it is warm. So the honest summary
+of this run is that deleting a replica under load cost no requests and did make
+callers wait. Anything that treats a zero failure count as 'no impact' is
+reading only half of it.
+
 ## Where the requests went
 
 Taken from each pod's own metrics, before and after the run. This is what shows the

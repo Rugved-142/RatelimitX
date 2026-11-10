@@ -408,3 +408,80 @@ def test_main_reports_a_missing_results_directory(tmp_path: Path):
     code = main(["--results", str(tmp_path / "nope"), "--output", str(tmp_path / "out.md")])
 
     assert code == 1
+
+
+# ---------------------------------------------------------------------------
+# Decisions per second is the offered rate, not a capacity
+# ---------------------------------------------------------------------------
+
+
+from report_benchmarks import offered_load  # noqa: E402
+
+
+def test_offered_load_is_the_warmup_plus_every_step():
+    """10s at 50, then 30s each at 50, 100, 150 and 200."""
+    total, duration, rate = offered_load({
+        "warmupSeconds": 10, "rpsStart": 50, "rpsStep": 50, "rpsSteps": 4, "stepSeconds": 30,
+    })
+    assert total == 15_500
+    assert duration == 130
+    assert rate == pytest.approx(119.23, abs=0.01)
+
+
+def test_offered_load_of_a_single_step():
+    total, duration, rate = offered_load({
+        "warmupSeconds": 0, "rpsStart": 100, "rpsStep": 0, "rpsSteps": 1, "stepSeconds": 10,
+    })
+    assert (total, duration) == (1_000, 10)
+    assert rate == pytest.approx(100.0)
+
+
+@pytest.mark.parametrize("parameters", [
+    {},
+    {"warmupSeconds": 10, "rpsStart": 50},
+    {"warmupSeconds": 10, "rpsStart": 50, "rpsStep": 50, "rpsSteps": 0, "stepSeconds": 30},
+    {"warmupSeconds": 0, "rpsStart": 50, "rpsStep": 50, "rpsSteps": 1, "stepSeconds": 0},
+])
+def test_offered_load_is_none_when_the_profile_is_incomplete(parameters):
+    """A missing profile must not be guessed at; the report says so instead."""
+    assert offered_load(parameters) is None
+
+
+def _env(**overrides):
+    parameters = {
+        "warmupSeconds": 10, "rpsStart": 50, "rpsStep": 50, "rpsSteps": 4, "stepSeconds": 30,
+        "userCount": 16, "tierMix": {"USER": 10, "PREMIUM": 5, "ADMIN": 1},
+    }
+    parameters.update(overrides)
+    return {"parameters": parameters}
+
+
+def _clean_run(**overrides):
+    run = RunResult(name="run-1", exit_code=0, allowed=100, denied=900, unexpected=0,
+                    total_requests=15_500, ok_requests=15_500, ko_requests=0,
+                    duration_seconds=130.0,
+                    percentiles={"p50": 1.0, "p95": 2.0, "p99": 3.0, "max": 10.0})
+    for key, value in overrides.items():
+        setattr(run, key, value)
+    return run
+
+
+def test_the_report_says_decisions_per_second_is_not_a_capacity(tmp_path):
+    text = render(_env(), [_clean_run()], tmp_path)
+    assert "Decisions per second is not a capacity figure" in text
+    assert "119.2 per second" in text
+    assert "15,500 requests" in text
+    assert "does not say" in text
+
+
+def test_the_report_does_not_claim_the_rate_was_answered_when_requests_failed(tmp_path):
+    """With failures the measured rate is below the offered one, and the claim would be wrong."""
+    text = render(_env(), [_clean_run(ko_requests=12)], tmp_path)
+    assert "Not every offered request was answered" in text
+    assert "It does not say" not in text
+
+
+def test_the_report_says_not_measured_when_the_load_profile_is_missing(tmp_path):
+    text = render({"parameters": {"userCount": 16}}, [_clean_run()], tmp_path)
+    assert NOT_MEASURED in text
+    assert "cannot be" in text

@@ -114,6 +114,55 @@ def interval_ms(events: dict[str, Any], from_key: str, to_key: str) -> int | Non
     return end - start
 
 
+def _latency_cost_note(phases: list[Phase], failures: int) -> list[str]:
+    """Says what a zero-failure run cost in latency, if it cost anything.
+
+    A reader who sees "0 failures" will conclude the deletion was free. In this run it was not:
+    every request was answered, and some callers waited seconds for it. The tail is the part that
+    shows that, so it is stated next to the zero rather than left in a table to be noticed.
+    """
+    by_name = {phase.name: phase for phase in phases}
+    before = by_name.get("before")
+    disruption = by_name.get("disruption")
+    if before is None or disruption is None:
+        return []
+
+    baseline = latency_summary(before.requests)
+    during = latency_summary(disruption.requests)
+    if baseline["p99"] is None or during["p99"] is None:
+        return []
+
+    lines = ["#### No failures is not the same as no impact", ""]
+    if during["p99"] <= baseline["p99"]:
+        lines.append("The tail did not move: p99 while the replica was missing was no worse than")
+        lines.append("before the deletion. That is the outcome to hope for and not one to assume;")
+        lines.append("it is reported because it was measured, not because it is guaranteed.")
+        lines.append("")
+        return lines
+
+    lines.append(f"Every request in this run was answered - {fmt_int(failures)} failures - and")
+    lines.append("some callers waited a long time for it. p99 went from")
+    lines.append(f"{fmt_ms(baseline['p99'])} before the deletion to {fmt_ms(during['p99'])} while")
+    after = by_name.get("after")
+    if after is not None:
+        later = latency_summary(after.requests)
+        if later["p99"] is not None:
+            lines.append(f"the replica was missing, and was still {fmt_ms(later['p99'])} after the")
+            lines.append("replacement had joined the Service.")
+        else:
+            lines.append("the replica was missing.")
+    else:
+        lines.append("the replica was missing.")
+    lines.append("")
+    lines.append("A JVM that has just started is slow for its first requests, and a readiness")
+    lines.append("probe establishes that a pod answers, not that it is warm. So the honest summary")
+    lines.append("of this run is that deleting a replica under load cost no requests and did make")
+    lines.append("callers wait. Anything that treats a zero failure count as 'no impact' is")
+    lines.append("reading only half of it.")
+    lines.append("")
+    return lines
+
+
 def render(results_dir: Path, environment: dict[str, Any], events: dict[str, Any],
            phases: list[Phase], deltas: dict[str, int | None],
            load_summary: dict[str, Any]) -> str:
@@ -206,6 +255,7 @@ def render(results_dir: Path, environment: dict[str, Any], events: dict[str, Any
         add(f"| {phase.name} | {fmt_int(latency['count'])} | {fmt_ms(latency['p50'])} | "
             f"{fmt_ms(latency['p95'])} | {fmt_ms(latency['p99'])} | {fmt_ms(latency['max'])} |")
     add("")
+    lines.extend(_latency_cost_note(phases, failures))
 
     add("## Where the requests went")
     add("")

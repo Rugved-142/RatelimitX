@@ -44,7 +44,16 @@ RATE="${RLX_RATE:-20}"
 USERS="${RLX_USERS:-5}"
 TIER="${RLX_TIER:-PREMIUM}"
 
-BENCH_PASSWORD="failure-test-password-123"
+# Generated per run, not a literal.
+#
+# These accounts live for one run on a local stack, so the value hardly matters - but a password
+# sitting in a tracked file is a password, and grep does not care what it was for. Generated
+# fresh each time instead.
+#
+# The accounts are reused by name across runs, so the rows are dropped before registering:
+# otherwise the second run would register nothing and then try this run's password against last
+# run's stored hash.
+BENCH_PASSWORD="$(openssl rand -hex 24)"
 AUTH_LIMIT_FOR_PROVISIONING=10000
 # The production value, restored on exit. It matches application.properties, docker-compose.yml
 # and k8s/10-configmap.yaml; a change in one of those belongs here too.
@@ -102,9 +111,9 @@ K8S_NODE="${RLX_K8S_NODE:-ratelimitx-control-plane}"
 kube() { kubectl --context "$K8S_CONTEXT" -n "$K8S_NAMESPACE" "$@"; }
 
 if [[ "$PLATFORM" == "compose" ]]; then
-  REQUIRED_TOOLS=(docker curl python3)
+  REQUIRED_TOOLS=(docker curl python3 openssl)
 else
-  REQUIRED_TOOLS=(docker kubectl curl python3)
+  REQUIRED_TOOLS=(docker kubectl curl python3 openssl)
 fi
 for tool in "${REQUIRED_TOOLS[@]}"; do
   command -v "$tool" >/dev/null 2>&1 || { echo "required tool not found: $tool" >&2; exit 1; }
@@ -373,15 +382,21 @@ login_token() {
     | python3 -c 'import sys, json; print(json.load(sys.stdin).get("token", ""))'
 }
 
-log "Preparing the admin account"
 ADMIN_USER="failureadmin"
-register "$ADMIN_USER"
 
 if [[ "$PLATFORM" == "compose" ]]; then
   POSTGRES_USER_VALUE="$(grep -E '^POSTGRES_USER=' .env | cut -d= -f2-)"
   POSTGRES_DB_VALUE="$(grep -E '^POSTGRES_DB=' .env | cut -d= -f2-)"
   POSTGRES_PASSWORD_VALUE="$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)"
 fi
+
+log "Clearing this run's accounts from a previous run"
+plat_psql <<SQL
+DELETE FROM users WHERE username = '$ADMIN_USER' OR username LIKE 'failureload%';
+SQL
+
+log "Preparing the admin account"
+register "$ADMIN_USER"
 
 # Registration always creates a USER and no endpoint can create the first ADMIN, so it is made
 # directly in the database.

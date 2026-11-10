@@ -32,7 +32,16 @@ RPS_STEPS="${RLX_RPS_STEPS:-4}"
 STEP_SECONDS="${RLX_STEP_SECONDS:-30}"
 WARMUP_SECONDS="${RLX_WARMUP_SECONDS:-10}"
 
-BENCH_PASSWORD="benchmark-password-123"
+# Generated per run, not a literal.
+#
+# These accounts live for one run on a local stack, so the value hardly matters - but a password
+# sitting in a tracked file is a password, and grep does not care what it was for. Generated
+# fresh each time instead.
+#
+# The accounts are reused by name across runs, so the rows are dropped before registering:
+# otherwise the second run would register nothing and then try this run's password against last
+# run's stored hash.
+BENCH_PASSWORD="$(openssl rand -hex 24)"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -54,7 +63,7 @@ log() { printf '\n== %s\n' "$*"; }
 # Preconditions
 # ---------------------------------------------------------------------------
 
-for tool in docker curl python3; do
+for tool in docker curl python3 openssl; do
   command -v "$tool" >/dev/null 2>&1 || { echo "required tool not found: $tool" >&2; exit 1; }
 done
 
@@ -119,21 +128,33 @@ if [[ "$health" != "healthy" ]]; then
   exit 1
 fi
 
-log "Preparing the admin account used to set user tiers"
 ADMIN_USER="benchadmin"
+
+POSTGRES_USER_VALUE="$(grep -E '^POSTGRES_USER=' .env | cut -d= -f2-)"
+POSTGRES_DB_VALUE="$(grep -E '^POSTGRES_DB=' .env | cut -d= -f2-)"
+POSTGRES_PASSWORD_VALUE="$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)"
+
+bench_psql() {
+  docker exec -i -e PGPASSWORD="$POSTGRES_PASSWORD_VALUE" ratelimitx-postgres \
+    psql -U "$POSTGRES_USER_VALUE" -d "$POSTGRES_DB_VALUE" -q
+}
+
+log "Clearing this run's accounts from a previous run"
+bench_psql <<SQL
+DELETE FROM users WHERE username = '$ADMIN_USER'
+  OR username LIKE 'user%' OR username LIKE 'premium%' OR username LIKE 'admin%';
+SQL
+
+log "Preparing the admin account used to set user tiers"
 set +e
 curl -s -o /dev/null -X POST "$BASE_URL/auth/register" \
   -H 'Content-Type: application/json' \
   -d "{\"username\":\"$ADMIN_USER\",\"email\":\"$ADMIN_USER@benchmark.invalid\",\"password\":\"$BENCH_PASSWORD\"}"
 set -e
 
-POSTGRES_USER_VALUE="$(grep -E '^POSTGRES_USER=' .env | cut -d= -f2-)"
-POSTGRES_DB_VALUE="$(grep -E '^POSTGRES_DB=' .env | cut -d= -f2-)"
-POSTGRES_PASSWORD_VALUE="$(grep -E '^POSTGRES_PASSWORD=' .env | cut -d= -f2-)"
-
-docker exec -e PGPASSWORD="$POSTGRES_PASSWORD_VALUE" ratelimitx-postgres \
-  psql -U "$POSTGRES_USER_VALUE" -d "$POSTGRES_DB_VALUE" -q -c \
-  "UPDATE users SET role='ADMIN', rate_limit=100000 WHERE username='$ADMIN_USER';"
+bench_psql <<SQL
+UPDATE users SET role='ADMIN', rate_limit=100000 WHERE username='$ADMIN_USER';
+SQL
 
 ADMIN_TOKEN="$(curl -s -X POST "$BASE_URL/auth/login" \
   -H 'Content-Type: application/json' \

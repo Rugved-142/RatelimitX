@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from analyze_failure_test import NOT_MEASURED, Request
+from analyze_failure_test import NOT_MEASURED, Phase, Request
 from analyze_pod_kill import (
     build_summary,
     interval_ms,
@@ -189,3 +189,57 @@ def test_main_refuses_a_run_with_no_recorded_delete(tmp_path):
     results.mkdir()
     (results / "events.json").write_text(json.dumps({"loadStartedAtMs": 1}), encoding="utf-8")
     assert main(["--results", str(results), "--output", str(tmp_path / "o.md")]) == 1
+
+
+# ---------------------------------------------------------------------------
+# A zero failure count must not read as "no impact"
+# ---------------------------------------------------------------------------
+
+
+def _phases_with_tail(before_p99_ms: int, during_p99_ms: int, after_p99_ms: int = 50):
+    """100 responses per phase, whose slowest two set the p99.
+
+    Nearest-rank p99 of 100 values is the 99th, so a single slow response does not move it. Two
+    do, which is the smallest sample that actually exercises the comparison.
+    """
+    def batch(start_seq, sent_ms, slow_ms):
+        requests = [make_request(seq=start_seq + i, sent_ms=sent_ms, latency_ms=5)
+                    for i in range(98)]
+        requests += [make_request(seq=start_seq + 98 + i, sent_ms=sent_ms, latency_ms=slow_ms)
+                     for i in range(2)]
+        return requests
+
+    return split_into_phases(
+        batch(0, 1_500, before_p99_ms) + batch(100, 2_500, during_p99_ms)
+        + batch(200, 3_500, after_p99_ms),
+        EVENTS,
+    )
+
+
+def test_the_report_states_the_latency_cost_beside_the_zero(tmp_path):
+    text = render(tmp_path, {}, EVENTS, _phases_with_tail(17, 1_858, 1_009), {}, {})
+    assert "No failures is not the same as no impact" in text
+    assert "17 ms" in text
+    assert "1,858 ms" in text
+    assert "1,009 ms" in text
+    assert "reading only half of it" in text
+
+
+def test_the_report_does_not_invent_a_cost_when_the_tail_did_not_move(tmp_path):
+    text = render(tmp_path, {}, EVENTS, _phases_with_tail(1_858, 17, 20), {}, {})
+    assert "The tail did not move" in text
+    assert "reading only half of it" not in text
+
+
+def test_the_latency_note_is_omitted_without_both_phases(tmp_path):
+    from analyze_pod_kill import _latency_cost_note
+    assert _latency_cost_note([Phase("before", "", 0, 10)], 0) == []
+
+
+def test_the_latency_note_is_omitted_when_nothing_was_answered(tmp_path):
+    from analyze_pod_kill import _latency_cost_note
+    phases = split_into_phases([
+        make_request(seq=0, status=0, sent_ms=1_500),
+        make_request(seq=1, status=0, sent_ms=2_500),
+    ], EVENTS)
+    assert _latency_cost_note(phases, 2) == []
