@@ -10,12 +10,6 @@ What has actually been measured on the cluster is in
 [pod-kill-test.md](pod-kill-test.md); both are generated from committed run data, produced on a
 local kind cluster.
 
-> **Status of the CI job.** The `kubernetes` job is added in the same change as these manifests
-> and has not run yet, so at the time of writing nothing here is backed by a green pipeline -
-> only by the local runs linked above. Until it has run, treat "it works on Kubernetes" as
-> meaning "it worked on one kind cluster on one laptop, with the evidence committed". This note
-> comes out when the job is green.
-
 ## Getting it up
 
 ```bash
@@ -134,8 +128,14 @@ establishes that it is answering, not that it is warm.
 
 The `kubernetes` job in [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) installs kind
 from a checksum-verified release binary, runs `scripts/kind-up.sh`, runs the pod kill test under
-load, and fails if a single request came back 5xx or got no response. It has not run yet; see the
-note at the top. The manifests are also
+load, and fails if a single request came back 5xx or got no response - or if fewer than a hundred
+requests were recorded, so a run that quietly measured nothing cannot pass either. The job is
+green: it creates the cluster, deploys the manifests and kills a pod under load on a GitHub-hosted
+runner in a little under five minutes, with the run data uploaded as an artifact.
+
+What the job establishes is that the manifests deploy and the Service keeps answering while a
+replica is deleted. It does not re-measure the figures above; those come from the local runs,
+whose raw data is committed. The manifests are also
 checked statically by `scripts/test_k8s_manifests.py` in the `scripts` job, which runs without a
 cluster, so a change that breaks one of the decisions above fails fast rather than waiting for
 the cluster to come up.
