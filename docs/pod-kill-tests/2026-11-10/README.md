@@ -3,6 +3,11 @@
 Raw output from `scripts/pod-kill-test.sh`. `docs/pod-kill-test.md` is generated from these files
 by `scripts/analyze_pod_kill.py`; that file is generated and should not be edited by hand.
 
+> **Provenance note.** The harness's account provisioning changed after this run, in commit
+> `c047b25`, which replaced the literal test passwords with per-run random values and made the
+> scripts clear their own accounts before registering; nothing that this run measured changed,
+> so the data here was not regenerated.
+
 | File | What it is |
 |------|------------|
 | `environment.json` | Cluster, replica count, grace period and load parameters |

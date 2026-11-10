@@ -91,6 +91,15 @@ fi
 
 DATE_DIR="$(date -u +%Y-%m-%d)"
 OUT_ROOT="docs/failure-tests/$PLATFORM/$DATE_DIR"
+
+# One report per platform: the two runs measure the same thing on different deployments, and
+# overwriting one with the other would lose half the evidence. Decided here rather than at the
+# point of use, so the results README can name the report this run actually writes.
+if [[ "$PLATFORM" == "kubernetes" ]]; then
+  REPORT=docs/failure-test-kubernetes.md
+else
+  REPORT=docs/failure-test.md
+fi
 mkdir -p "$OUT_ROOT"
 
 log() { printf '\n== %s\n' "$*"; }
@@ -660,11 +669,19 @@ PYEOF
 rm -f "$TOKENS_FILE"
 
 # A dated results directory should explain itself without reference to the script that made it.
-cat > "$OUT_ROOT/README.md" <<'READMEEOF'
+# Written in two parts on purpose. Only the header needs this run's platform and report path, so
+# only the header is an expanding heredoc; the rest is quoted. An unquoted heredoc would treat
+# every backticked file name in the table below as a command substitution, which bash -n does not
+# catch and which would quietly produce a mangled README.
+cat > "$OUT_ROOT/README.md" <<READMEEOF
 # Failure test run data
 
-Raw output from `scripts/failure-test.sh`. `docs/failure-test.md` is generated from these files
-by `scripts/analyze_failure_test.py`; that file is generated and should not be edited by hand.
+Raw output from \`scripts/failure-test.sh --platform $PLATFORM\`. \`$REPORT\` is generated from
+these files by \`scripts/analyze_failure_test.py\`; that file is generated and should not be
+edited by hand.
+READMEEOF
+
+cat >> "$OUT_ROOT/README.md" <<'READMEEOF'
 
 | File | What it is |
 |------|------------|
@@ -680,13 +697,6 @@ The load users' JWTs are not kept: they are credentials for throwaway accounts o
 READMEEOF
 
 log "Generating the report"
-# One report per platform: the two runs measure the same thing on different deployments and
-# overwriting one with the other would lose half the evidence.
-if [[ "$PLATFORM" == "kubernetes" ]]; then
-  REPORT=docs/failure-test-kubernetes.md
-else
-  REPORT=docs/failure-test.md
-fi
 python3 -I scripts/analyze_failure_test.py --results "$OUT_ROOT" --output "$REPORT"
 
 log "Done"

@@ -1,7 +1,13 @@
 # Failure test run data
 
-Raw output from `scripts/failure-test.sh`. `docs/failure-test.md` is generated from these files
-by `scripts/analyze_failure_test.py`; that file is generated and should not be edited by hand.
+Raw output from `scripts/failure-test.sh --platform compose`. `docs/failure-test.md` is generated from
+these files by `scripts/analyze_failure_test.py`; that file is generated and should not be
+edited by hand.
+
+> **Provenance note.** The harness's account provisioning changed after this run, in commit
+> `c047b25`, which replaced the literal test passwords with per-run random values and made the
+> scripts clear their own accounts before registering; nothing that this run measured changed,
+> so the data here was not regenerated.
 
 | File | What it is |
 |------|------------|
