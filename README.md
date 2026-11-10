@@ -1,820 +1,383 @@
 # RateLimitX
 
-A distributed rate limiting service built with Spring Boot, Redis and PostgreSQL. It provides
-JWT authentication with per-role rate limits, three rate limiting algorithms backed by Redis,
-a circuit breaker with an in-memory fallback, and Prometheus/Grafana monitoring.
+A rate limiting service: JWT authentication with per-tier limits, three Redis-backed algorithms,
+a circuit breaker with an in-memory fallback, and Prometheus metrics. Runs under Docker Compose
+or on Kubernetes.
 
 [![CI](https://github.com/Rugved-142/RatelimitX/actions/workflows/ci.yml/badge.svg?branch=hardening)](https://github.com/Rugved-142/RatelimitX/actions/workflows/ci.yml)
-![Java](https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.0-green?style=flat-square&logo=springboot)
-![Spring Security](https://img.shields.io/badge/Spring%20Security-7.0.0-green?style=flat-square&logo=springsecurity)
-![Redis](https://img.shields.io/badge/Redis-7.x-red?style=flat-square&logo=redis)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-blue?style=flat-square&logo=postgresql)
-![Prometheus](https://img.shields.io/badge/Prometheus-2.47-orange?style=flat-square&logo=prometheus)
-![Grafana](https://img.shields.io/badge/Grafana-10.1-orange?style=flat-square&logo=grafana)
-![Docker](https://img.shields.io/badge/Docker-Ready-blue?style=flat-square&logo=docker)
-![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
+![Java 21](https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk)
+![Spring Boot 4.0.9](https://img.shields.io/badge/Spring%20Boot-4.0.9-green?style=flat-square&logo=springboot)
+![License MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
 
-## Table of Contents
+> The badge tracks the `hardening` branch, which is where this work lives. Point it at `main`
+> when it merges.
 
-- [Overview](#overview)
-- [Features](#features)
-- [Architecture](#architecture)
-- [Authentication](#authentication)
-- [Algorithms](#algorithms)
-- [Monitoring](#monitoring)
-- [Circuit Breaker](#circuit-breaker)
-- [Tech Stack](#tech-stack)
-- [Getting Started](#getting-started)
-- [Docker Deployment](#docker-deployment)
-- [API Documentation](#api-documentation)
-- [Benchmarks](#benchmarks)
-- [Project Structure](#project-structure)
+**Every factual claim below is mapped to the test, script or committed run data that backs it in
+[docs/claims.md](docs/claims.md).** No measured figure is quoted in this file: performance and
+failure numbers live in generated documents, regenerated from raw data, so that re-running a
+benchmark cannot leave a stale number here.
+
+## Contents
+
+- [Quick start](#quick-start) · [What it does](#what-it-does) · [Architecture](#architecture)
+- [Algorithms](#algorithms) · [API](#api) · [Operating it](#operating-it)
+- [Measured results](#measured-results) · [Design decisions and limitations](#design-decisions-and-limitations)
+- [Testing](#testing) · [Continuous integration](#continuous-integration) · [Layout](#layout)
 
 ---
 
-## Overview
+## Quick start
 
-RateLimitX protects APIs from abuse and enforces fair resource allocation. It offers JWT-based
-authentication with role-based rate limits, three rate limiting algorithms implemented on Redis,
-Prometheus/Grafana monitoring, and a circuit breaker that falls back to an in-memory limiter when
-Redis is unavailable. The whole stack runs under Docker Compose.
-
-### Why Rate Limiting?
-
-- **Prevent abuse**: stop a single client from overwhelming the API
-- **Ensure fairness**: allocate capacity by user tier (USER / PREMIUM / ADMIN)
-- **Protect infrastructure**: reduce the blast radius of traffic spikes
-- **Cost control**: cap expensive operations per user
-
-### Key Highlights
-
-- **JWT authentication** — stateless tokens carrying the user's role and rate limit
-- **Tiered rate limits** — USER (10), PREMIUM (100), ADMIN (1000) requests/min by default
-- **Three Redis algorithms** — fixed window, token bucket, sliding window counter
-- **Circuit breaker fallback** — in-memory limiting while Redis is unreachable, with a single
-  recovery probe and failure counting restricted to Redis outages
-- **No default secrets** — the application refuses to start without a 32-byte `JWT_SECRET`
-- **Login throttling** — `/auth/login` and `/auth/register` capped per client IP
-- **Prometheus + Grafana** — metrics on a private management port, auto-provisioned dashboard
-- **Docker Compose** — 5 services: app, PostgreSQL, Redis, Prometheus, Grafana
-
-Benchmarks: pending, see [docs/benchmarks.md](docs/benchmarks.md).
-
----
-
-## Features
-
-### Authentication & Security
-- JWT authentication — stateless token-based authentication
-- BCrypt password hashing
-- Role-based access control — USER, PREMIUM, ADMIN
-- Tiered rate limits per role
-- Spring Security 7
-- No secret has a default value; a missing or short `JWT_SECRET` aborts startup
-- `/auth/login` and `/auth/register` are throttled per client IP (5/min each by default)
-- All errors are JSON: 401 unauthenticated, 403 unauthorised, 400 validation, 404 unknown
-- Actuator is served on a private port that Docker Compose does not publish
-
-### Rate Limiting Algorithms
-- Fixed window counter — simple time-window based limiting
-- Token bucket — smooth limiting with burst support
-- Sliding window counter — no window-boundary burst
-- Every decision is a single atomic Lua script, so concurrent requests cannot both pass
-- Window and refill arithmetic use Redis's clock, so instances cannot disagree about the time
-- Capacity and refill rate follow the caller's tier, not a fixed default
-- Keys carry a hash tag per user, so a Redis Cluster keeps one user's keys on one node
-- The algorithm can be switched at runtime via `POST /admin/algorithm`
-
-### Monitoring & Observability
-- Prometheus metrics exposed at `/actuator/prometheus`
-- Grafana dashboard provisioned on startup
-- Custom metrics for request counts, denials and rate limit check duration
-- JVM metrics (memory, CPU, threads) collected by Micrometer
-
-### Reliability
-- Circuit breaker around the Redis-backed limiters
-- In-memory fallback limiter while the circuit is open
-- Automatic recovery once Redis responds again
-- Health endpoints for the application and the circuit breaker
-
-### Operations
-- Docker and Docker Compose
-- 5 orchestrated services: app, PostgreSQL, Redis, Prometheus, Grafana
-- Gatling load-test harness driving the authenticated API (see [Benchmarks](#benchmarks))
-
-### API Headers
-```
-X-RateLimit-Limit: 10          # Maximum requests allowed
-X-RateLimit-Remaining: 7       # Requests remaining in window
-X-RateLimit-Reset: 45000       # Time until the limit resets
-X-Algorithm: sliding-window    # Active algorithm
-X-User-Role: PREMIUM           # User's role/tier
-Retry-After: 45                # Seconds before the client should retry (on 429)
-```
-
-`X-RateLimit-Reset` is milliseconds for every algorithm, and `X-RateLimit-Limit` reports the
-limit the limiter actually enforced. `Retry-After` is whole seconds, rounded up, never below 1.
-
----
-
-## Architecture
-
-```mermaid
-flowchart TB
-    subgraph Clients["Clients"]
-        WEB[Web App]
-        MOBILE[Mobile App]
-        CLI[CLI Tool]
-    end
-
-    subgraph Gateway["Security Layer"]
-        JWT[JWT Auth Filter]
-        SEC[Spring Security]
-    end
-
-    subgraph App["Application Layer"]
-        AUTH[Auth Controller]
-        API[API Controller]
-        ADMIN[Admin Controller]
-        METRICS[Metrics Controller]
-    end
-
-    subgraph RateLimit["Rate Limiting"]
-        RL[Resilient Rate Limiter]
-        CB{Circuit Breaker}
-        TB[Token Bucket]
-        SW[Sliding Window]
-        FW[Fixed Window]
-        LOCAL[Local Fallback]
-    end
-
-    subgraph Monitoring["Monitoring"]
-        PROM[(Prometheus)]
-        GRAF[Grafana]
-    end
-
-    subgraph Data["Data Layer"]
-        PG[(PostgreSQL)]
-        REDIS[(Redis)]
-    end
-
-    Clients -->|"Authorization: Bearer JWT"| JWT
-    JWT --> SEC
-    SEC --> App
-
-    AUTH --> PG
-    API --> RL
-
-    RL --> CB
-    CB -->|Closed| TB & SW & FW
-    CB -->|Open| LOCAL
-    TB & SW & FW --> REDIS
-
-    App -->|/actuator/prometheus| PROM
-    PROM --> GRAF
-```
-
-### Request Flow
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant J as JWT Filter
-    participant API as API Controller
-    participant RL as Rate Limiter
-    participant Redis
-    participant P as Prometheus
-    participant G as Grafana
-
-    C->>J: Request + Bearer Token
-    J->>J: Validate JWT
-    J->>API: Authenticated Request
-    API->>RL: Check Rate Limit
-    RL->>Redis: Get/Update Counter
-    Redis-->>RL: Result
-    RL-->>API: Allowed/Denied
-
-    par Metrics Collection
-        P->>API: Scrape /actuator/prometheus
-        API-->>P: Metrics
-        G->>P: Query Metrics
-        P-->>G: Time Series Data
-    end
-
-    API-->>C: Response + Headers
-```
-
----
-
-## Authentication
-
-RateLimitX uses JWT for stateless authentication with role-based rate limiting.
-
-### User Roles & Rate Limits
-
-| Role | Default rate limit | Access |
-|------|--------------------|--------|
-| **USER** | 10 req/min | `/api/**`, `/auth/**`, `/metrics/**` |
-| **PREMIUM** | 100 req/min | `/api/**`, `/auth/**`, `/metrics/**` |
-| **ADMIN** | 1000 req/min | All endpoints including `/admin/**` |
-
-Defaults come from `ratelimit.default.user`, `ratelimit.default.premium` and
-`ratelimit.default.admin`; a per-user override is stored on the user row.
-
-### JWT Claims
-
-The token is signed with HMAC-SHA256 and carries the subject (username), the user's `role`
-and their `rateLimit`, plus the standard `iat` and `exp` claims.
-
-### Security Settings
-
-| Setting | Implementation |
-|---------|----------------|
-| Password hashing | BCrypt (Spring Security default strength, 10) |
-| Token signing | HMAC-SHA256 |
-| Token expiry | 24 hours (`jwt.expiration=86400000`, milliseconds) |
-| Session management | Stateless |
-| CSRF protection | Disabled (stateless API) |
-
----
-
-## Algorithms
-
-### 1. Fixed Window Counter
-
-Counts requests in fixed time windows (for example, per minute).
-
-| Pros | Cons |
-|------|------|
-| Simple to implement | Boundary burst problem |
-| Low memory usage | Can allow 2x limit at window edges |
-| O(1) operations | Hard reset may surprise clients |
-
-**Best for**: simple APIs, internal services
-
-### 2. Token Bucket
-
-Tokens are added at a fixed rate; each request consumes a token. Capacity is the caller's
-per-minute limit and the refill rate is that limit divided by 60 seconds, so a tier allowed 100
-requests a minute can burst to 100 and then sustain 100 a minute.
-
-| Pros | Cons |
-|------|------|
-| Allows controlled bursts | More state to keep |
-| Smooth rate limiting | Requires tuning |
-| Widely used in practice | Two parameters to configure |
-
-**Best for**: public APIs, services needing burst capacity
-
-### 3. Sliding Window Counter
-
-Combines the current and previous window with a weighted average.
-
-| Pros | Cons |
-|------|------|
-| No boundary burst | Slightly more complex |
-| More accurate than a fixed window | Multiple Redis keys per user |
-| Smoother client experience | More memory usage |
-
-**Best for**: high-accuracy limits, premium tiers
-
----
-
-## Monitoring
-
-RateLimitX ships with a Prometheus and Grafana stack.
-
-### Metrics Exposed
-
-| Metric | Type | Description |
-|--------|------|-------------|
-| `http_server_requests_seconds` | Histogram | HTTP request latencies |
-| `ratelimit_requests_total` | Counter | Total rate limit checks |
-| `ratelimit_requests_denied` | Counter | Denied requests, tagged by algorithm |
-| `ratelimit_check_duration` | Timer | Rate limit check duration |
-| `app_circuitbreaker_state` | Gauge | Circuit breaker state: 0=CLOSED, 1=HALF_OPEN, 2=OPEN |
-| `jvm_memory_used_bytes` | Gauge | JVM memory usage |
-| `jvm_threads_current` | Gauge | Active threads |
-
-No metric carries a per-user label: one time series per user would grow without bound. Per-user
-counts come from `/metrics/user/{userId}` instead.
-
-See [MONITORING-SETUP.md](MONITORING-SETUP.md) for the full setup and example PromQL queries.
-
-### Access URLs
-
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| Application | http://localhost:8080 | JWT |
-| Prometheus | http://127.0.0.1:9090 | - |
-| Grafana | http://127.0.0.1:3000 | `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` from `.env` |
-
-Prometheus, Grafana, PostgreSQL and Redis publish their host ports on `127.0.0.1` only, so they
-are not reachable from other machines on the network. Only the application's port 8080 is bound
-on all interfaces.
-
-### Actuator
-
-Actuator runs on its own port (`management.server.port=9091`) which Docker Compose does not
-publish. Prometheus scrapes `app:9091` across the internal network; nothing under `/actuator` is
-mapped on port 8080 at all.
-
-This was chosen over keeping actuator on port 8080 behind an ADMIN role check. Prometheus would
-then need credentials to scrape, and a single mistake in a request matcher would expose health
-details, `/actuator/env` or the metrics endpoint publicly. An unpublished port cannot be reached
-from outside the Compose network however the authorization rules are written.
-
-The cost is that `curl http://localhost:8080/actuator/health` no longer works from the host. Check
-health instead with:
-
-```bash
-docker compose ps
-```
-
-```bash
-docker exec ratelimitx-app curl -fsS http://localhost:9091/actuator/health
-```
-
----
-
-## Circuit Breaker
-
-A circuit breaker wraps the Redis-backed limiters so the service keeps answering when Redis
-is unreachable.
-
-```mermaid
-stateDiagram-v2
-    [*] --> CLOSED
-    CLOSED --> OPEN : 3 consecutive failures
-    OPEN --> HALF_OPEN : After 30s timeout
-    HALF_OPEN --> CLOSED : Test request succeeds
-    HALF_OPEN --> OPEN : Test request fails
-
-    CLOSED : Normal operation, all requests go to Redis
-    OPEN : Protection mode, use local fallback
-    HALF_OPEN : Testing, try one request against Redis
-```
-
-| Parameter | Property | Default |
-|-----------|----------|---------|
-| Failure threshold | `ratelimit.circuit-breaker.failure-threshold` | 3 |
-| Timeout before probing | `ratelimit.circuit-breaker.timeout` | 30s |
-| Fallback window | `ratelimit.fallback.window-size-ms` | 60000 |
-| Fallback counter eviction | `ratelimit.fallback.eviction-after-ms` | 300000 |
-
-Behaviour worth knowing before relying on it:
-
-- **Only one probe runs at a time.** In HALF_OPEN a single request is allowed through to Redis;
-  every other request in that moment uses the fallback. Reopening the gate to all traffic at once
-  would send the full arriving load at a dependency that was failing seconds earlier.
-- **Only Redis connectivity and timeout failures open the circuit.** Any other exception
-  propagates to the caller rather than being counted and hidden behind the fallback, so a bug in
-  the limiter surfaces as an error instead of as a silent downgrade.
-- **Fallback limits are per instance.** N instances serving the fallback simultaneously admit up
-  to N x limit per window between them. During an outage the service keeps answering with an
-  approximate limit rather than failing; treat fallback numbers accordingly.
-- `app_circuitbreaker_state` reports the live state: 0 CLOSED, 1 HALF_OPEN, 2 OPEN.
-
----
-
-## Tech Stack
-
-| Component | Technology | Purpose |
-|-----------|------------|---------|
-| Language | Java 21 | Core application |
-| Framework | Spring Boot 4.0.0 | REST API, dependency injection |
-| Security | Spring Security 7.0.0 | Authentication & authorization |
-| Authentication | JWT (jjwt 0.12.3) | Stateless token-based auth |
-| Database | PostgreSQL 16 | User management & persistence |
-| Cache | Redis 7.x | Distributed rate limit storage |
-| Metrics | Micrometer + Prometheus | Metrics collection |
-| Visualization | Grafana 10.1 | Dashboards |
-| ORM | Spring Data JPA (Hibernate 7) | Database access |
-| Scripting | Lua | Atomic rate limit decisions, with Redis as the time source |
-| Containerization | Docker & Docker Compose | Deployment |
-| Load testing | Gatling 3.10 | Performance measurement |
-| Testing | JUnit 5, Testcontainers 1.21.3 | Unit and integration tests |
-| Coverage | JaCoCo 0.8.13 | Coverage report, no gate |
-| Build | Maven | Build & dependency management |
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- Docker and Docker Compose
-- For local (non-Docker) runs: JDK 21 and a running Redis and PostgreSQL
-
-### Quick Start with Docker
-
-```bash
-git clone https://github.com/Rugved-142/RateLimitX.git
-cd RateLimitX
-```
+From a fresh clone. Needs Docker and Docker Compose; nothing else.
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` and replace every `replace_me_*` value. `JWT_SECRET` must be at least 32 bytes or the
-application will not start; generate one with `openssl rand -base64 48`. `SPRING_DATASOURCE_PASSWORD`
-must match `POSTGRES_PASSWORD`. Then start the five services:
+Then edit `.env` and replace every placeholder. There are no defaults: the application refuses to
+start without a `JWT_SECRET` of at least 32 bytes, and Compose refuses to start without the
+database and Grafana credentials. Generate a secret with:
 
 ```bash
-docker compose up --build
+openssl rand -base64 48
 ```
-
-```bash
-docker compose ps
-```
-
-The `app` service reports `healthy` once its container healthcheck passes. Grafana is at
-http://127.0.0.1:3000 and Prometheus at http://127.0.0.1:9090.
-
-### Building and Testing Locally
-
-```bash
-./mvnw -B verify
-```
-
-This runs 65 unit tests and 98 integration tests and writes a coverage report to
-`target/site/jacoco/index.html`. The integration tests (`*IT`) start a real Redis and PostgreSQL
-with Testcontainers, so **Docker must be running**. There is no coverage threshold yet.
-
-Unit tests alone, with no Docker required:
-
-```bash
-./mvnw -B test
-```
-
-For local debugging, the `dev` profile turns on SQL logging and debug logging for the rate
-limiting internals. It is never active by default:
-
-```bash
-SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
-```
-
----
-
-## Docker Deployment
-
-### Services
-
-| Service | Container | Port |
-|---------|-----------|------|
-| app | ratelimitx-app | 8080 |
-| postgres | ratelimitx-postgres | 5432 |
-| redis | ratelimitx-redis | 6379 |
-| prometheus | ratelimitx-prometheus | 9090 |
-| grafana | ratelimitx-grafana | 3000 |
-
-All services share the `ratelimitx-network` bridge network. Persistent volumes:
-`postgres-data`, `redis-data`, `prometheus-data`, `grafana-data`.
-
-### Docker Commands
-
-```bash
-docker compose up --build
-```
-
-```bash
-docker compose up -d
-```
-
-```bash
-docker compose logs -f app
-```
-
-```bash
-docker compose down
-```
-
-```bash
-docker compose down -v
-```
-
-```bash
-docker exec -it ratelimitx-redis redis-cli
-```
-
----
-
-## API Documentation
-
-### Authentication Endpoints
-
-#### Register User
-```http
-POST /auth/register
-Content-Type: application/json
-
-{
-  "username": "rugved",
-  "email": "rugved@example.com",
-  "password": "password123"
-}
-```
-
-#### Login
-```http
-POST /auth/login
-Content-Type: application/json
-
-{
-  "username": "rugved",
-  "password": "password123"
-}
-```
-
-**Response:**
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiJ9...",
-  "tokenType": "Bearer",
-  "expiresIn": 86400,
-  "username": "rugved",
-  "role": "USER",
-  "rateLimit": 10
-}
-```
-
-#### Current User
-```http
-GET /auth/me
-Authorization: Bearer <token>
-```
-
----
-
-### Rate Limited Endpoints
-
-#### Get Data
-```http
-GET /api/data
-Authorization: Bearer <token>
-```
-
-**Response headers:**
-```
-X-RateLimit-Limit: 10
-X-RateLimit-Remaining: 7
-X-RateLimit-Reset: 45000
-X-Algorithm: sliding-window
-X-User-Role: USER
-```
-
-
-
-#### Rate Limit Status
-```http
-GET /api/status
-Authorization: Bearer <token>
-```
-
----
-
-### Metrics Endpoints
-
-`/metrics/**` is backed by Redis counters and is **disabled by default**, because recording them
-costs roughly fourteen extra Redis commands on every request for numbers Micrometer already
-provides. These paths return 404 unless `metrics.legacy.enabled=true`. Prometheus metrics at
-`/actuator/prometheus` are unaffected by this setting.
-
-```http
-GET /metrics/summary
-GET /metrics/hourly
-GET /metrics/daily
-GET /metrics/history?hours=24
-GET /metrics/user/{userId}
-```
-
----
-
-### Admin Endpoints (ADMIN role)
-
-```http
-GET    /admin/health
-GET    /admin/stats
-GET    /admin/algorithm
-POST   /admin/algorithm
-GET    /admin/user/{userId}
-GET    /admin/bucket/{userId}
-GET    /admin/sliding/{userId}
-GET    /admin/compare/{userId}
-POST   /admin/limit
-DELETE /admin/reset/{userId}
-GET    /admin/circuit
-POST   /admin/circuit/reset
-```
-
----
-
-#### Set a user's limit or tier
-
-```http
-POST /admin/limit
-Authorization: Bearer <admin token>
-Content-Type: application/json
-
-{"username": "someone", "role": "PREMIUM", "rateLimit": 100}
-```
-
-`rateLimit` is requests per minute and takes effect on the user's next request. Omitting it while
-giving a `role` moves the user to that tier's default. Existing tokens stay valid: the limiter
-reads the user record on each request rather than trusting the token's claims.
-
-#### Switch algorithm at runtime
-
-```http
-POST /admin/algorithm
-Authorization: Bearer <admin token>
-Content-Type: application/json
-
-{"algorithm": "token-bucket"}
-```
-
-Accepts `fixed-window`, `token-bucket` or `sliding-window`; anything else returns 400 and changes
-nothing. Each algorithm keeps its own Redis keys, so switching does not reset anyone's counters.
-
-### Monitoring Endpoints
-
-Served on the management port (9091), which is not published to the host. See
-[Actuator](#actuator).
-
-```http
-GET /actuator/health
-GET /actuator/info
-GET /actuator/prometheus
-```
-
----
-
-## Benchmarks
-
-Measured results are in [docs/benchmarks.md](docs/benchmarks.md), generated from committed run
-data under `docs/benchmarks/<date>/`. No figure in that document is typed by hand.
 
 ```bash
 docker compose up -d --build
 ```
 
 ```bash
-scripts/benchmark.sh --runs 3 --algorithm sliding-window
+scripts/smoke-test.sh
 ```
 
-The script records the machine, container limits, Docker version and load parameters alongside the
-raw Gatling output, runs the simulation three times, and regenerates the report with
-`scripts/report_benchmarks.py`. It works on Linux and macOS and opens nothing.
+The smoke test is the check that the stack works, and it asserts rather than prints: an
+unauthenticated request gets 401 and not 403, a forged token is refused, the management port is
+**not** reachable from the host, registration and login work, a new USER-tier account gets
+exactly 10 admissions and 5 denials out of 15 requests with a usable `Retry-After`, the rate limit
+headers are all present, a USER cannot reach `/admin`, and the metrics the dashboards and alert
+rules are built on exist. It exits non-zero if any of that is untrue.
 
-Two throughput figures are reported separately, because a 429 is a correct answer from a rate
-limiter and not a failure: **decisions per second** covers every request the service ruled on,
-while **allowed per second** counts only admissions and is bounded by the configured per-minute
-caps rather than by the service's capacity. Collapsing them into one number would describe
-neither.
+Grafana is on http://127.0.0.1:3000 and Prometheus on http://127.0.0.1:9090. Every published port
+binds to 127.0.0.1, including the API on 8080: nothing here is meant to be reachable from another
+machine. Change that deliberately if you need it.
 
-The report generator has its own tests:
+To tear down, including the volumes:
 
 ```bash
-cd scripts && python3 -m pytest test_report_benchmarks.py
+docker compose down -v
 ```
+
+### On Kubernetes
+
+```bash
+scripts/kind-up.sh
+```
+
+Creates a local [kind](https://kind.sigs.k8s.io) cluster, builds and side-loads the image,
+generates the Secret into the cluster, applies `k8s/`, and runs the same smoke test against it.
+See [docs/kubernetes.md](docs/kubernetes.md).
+
+### Running the tests
+
+```bash
+./mvnw -B verify
+```
+
+Integration tests start a real Redis and PostgreSQL with Testcontainers, so **Docker must be
+running**. `./mvnw -B test` runs the unit tests alone and needs no Docker.
 
 ---
 
-## Project Structure
+## What it does
 
-```
-RateLimitX/
-├── Dockerfile                              # Multi-stage build
-├── docker-compose.yml                      # 5 services
-├── pom.xml                                 # Maven build
-│
-├── docs/
-│   ├── benchmarks.md                       # Generated from the run data below
-│   └── benchmarks/<date>/                  # Raw Gatling output and captured environment
-│
-├── scripts/
-│   ├── benchmark.sh                        # Runs the benchmark and regenerates the report
-│   ├── report_benchmarks.py                # Builds benchmarks.md from saved runs
-│   └── test_report_benchmarks.py           # pytest tests for the generator
-│
-│
-├── prometheus/
-│   └── prometheus.yml                      # Prometheus configuration
-│
-├── grafana/
-│   ├── provisioning/
-│   │   ├── datasources/datasource.yml      # Prometheus datasource
-│   │   └── dashboards/dashboard.yml        # Dashboard provisioning
-│   └── dashboards/
-│       └── ratelimitx-dashboard.json       # Pre-built dashboard
-│
-├── src/main/java/com/ratelimitx/core/
-│   ├── RateLimitXApplication.java          # Main entry point
-│   │
-│   ├── config/
-│   │   ├── RateLimitConfig.java            # Rate limit configuration
-│   │   ├── AuthThrottleProperties.java     # Per-IP auth endpoint limits
-│   │   ├── JwtProperties.java              # JWT secret, validated at startup
-│   │   ├── RedisConfig.java                # Redis connection setup
-│   │   └── MetricsConfig.java              # Micrometer/Prometheus config
-│   │
-│   ├── controller/
-│   │   ├── ApiController.java              # Rate-limited API endpoints
-│   │   ├── AdminController.java            # Admin & monitoring
-│   │   ├── AuthController.java             # Authentication endpoints
-│   │   └── MetricsController.java          # Redis-based metrics
-│   │
-│   ├── dto/
-│   │   ├── AuthResponse.java
-│   │   ├── LoginRequest.java
-│   │   └── RegisterRequest.java
-│   │
-│   ├── entity/
-│   │   ├── Role.java                       # User roles enum
-│   │   └── User.java                       # User JPA entity
-│   │
-│   ├── repository/
-│   │   └── UserRepository.java
-│   │
-│   ├── security/
-│   │   ├── AuthenticatedUser.java          # Principal carrying id, role, rate limit
-│   │   ├── AuthThrottleFilter.java         # Per-IP throttle on /auth/login, /auth/register
-│   │   ├── ClientIpResolver.java           # Client IP, X-Forwarded-For opt-in
-│   │   ├── CustomUserDetailsService.java
-│   │   ├── JwtAuthenticationFilter.java
-│   │   ├── JwtUtil.java
-│   │   ├── RestAccessDeniedHandler.java    # 403 JSON
-│   │   ├── RestAuthenticationEntryPoint.java  # 401 JSON
-│   │   └── SecurityConfig.java
-│   │
-│   ├── circuitbreaker/
-│   │   ├── CircuitBreaker.java
-│   │   ├── CircuitBreakerState.java
-│   │   └── LocalRateLimiter.java           # In-memory fallback
-│   │
-│   ├── model/
-│   │   └── RateLimitResult.java
-│   │
-│   ├── web/
-│   │   ├── GlobalExceptionHandler.java     # JSON error responses
-│   │   └── UserNotFoundException.java
-│   │
-│   └── service/
-│       ├── RateLimiterService.java         # Fixed window
-│       ├── TokenBucketService.java         # Token bucket
-│       ├── SlidingWindowService.java       # Sliding window
-│       ├── ResilientRateLimiter.java       # Circuit breaker integration
-│       ├── MetricsService.java             # Redis metrics tracking
-│       └── PrometheusMetricsService.java   # Prometheus metrics
-│
-├── src/main/resources/
-│   └── application.properties
-│
-├── src/test/java/com/ratelimitx/core/
-│   ├── support/                            # Shared containers and helpers
-│   ├── circuitbreaker/                     # Breaker and fallback unit tests
-│   ├── config/                             # Properties validation tests
-│   ├── security/                           # Auth, roles, throttling (*IT)
-│   ├── controller/                         # API headers per tier (*IT)
-│   ├── service/                            # Per-algorithm behaviour (*IT)
-│   └── resilience/                         # Redis outage and recovery (*IT)
-│
-└── src/test/scala/loadtest/
-    ├── RateLimitXSimulation.scala          # Gatling simulation
-    └── simpleLoadTest.scala
+A caller authenticates with a JWT and gets a per-minute request allowance set by their tier. Every
+request to `/api/data` is checked against that allowance by one of three algorithms, all of which
+keep their state in Redis so that several application instances share one view of it. The decision
+is one atomic Lua script, so two concurrent requests cannot both be allowed past the limit.
+
+| Tier | Default limit |
+|------|---------------|
+| USER | 10 requests/minute |
+| PREMIUM | 100 requests/minute |
+| ADMIN | 1000 requests/minute |
+
+A denied request gets 429 with `Retry-After`. An admitted one gets 200. Both carry the rate limit
+headers. A 429 is a correct answer, not an error, and nothing in this repository counts it as a
+failure.
+
+When Redis stops answering, a circuit breaker opens and an in-memory limiter takes over so the
+service keeps responding. That has real consequences for what "the limit" means, which is
+[ADR 3](docs/adr/0003-per-instance-fallback.md) and the
+[limitations](#design-decisions-and-limitations) below.
+
+---
+## Architecture
+
+Five services under Compose: the application, PostgreSQL, Redis, Prometheus and Grafana.
+
+```mermaid
+flowchart TB
+    C["Client<br/>Authorization: Bearer JWT"]
+
+    subgraph Chain["Spring Security filter chain :8080"]
+        THROTTLE["AuthThrottleFilter<br/>/auth/login, /auth/register only"]
+        JWTF["JwtAuthenticationFilter<br/>validates the token,<br/>loads the user"]
+    end
+
+    subgraph Controllers["Controllers"]
+        AUTH["AuthController<br/>/auth/**"]
+        API["ApiController<br/>/api/**"]
+        ADM["AdminController<br/>/admin/** - ADMIN only"]
+    end
+
+    subgraph Limiter["Rate limiting"]
+        RRL["ResilientRateLimiter"]
+        CB{"CircuitBreaker"}
+        ALGOS["Fixed window<br/>Token bucket<br/>Sliding window<br/><i>one atomic Lua script each</i>"]
+        LOCAL["LocalRateLimiter<br/><i>in memory, per instance</i>"]
+    end
+
+    PG[("PostgreSQL<br/>users")]
+    REDIS[("Redis<br/>counters, buckets,<br/>auth throttle")]
+
+    subgraph Mgmt["Management :9091 - not published"]
+        ACT["/actuator/prometheus"]
+    end
+
+    PROM[("Prometheus")]
+    GRAF["Grafana"]
+
+    C --> THROTTLE --> JWTF --> Controllers
+    THROTTLE -. "per-IP counter" .-> REDIS
+    JWTF -- "user lookup, every request" --> PG
+    AUTH --> PG
+    ADM --> PG
+    ADM -. "SCAN" .-> REDIS
+    API --> RRL --> CB
+    CB -- "closed, or the one half-open probe" --> ALGOS --> REDIS
+    CB -- "open, or a Redis failure" --> LOCAL
+    Controllers -.-> ACT
+    PROM -- "scrapes app:9091" --> ACT
+    GRAF --> PROM
 ```
 
-## Continuous Integration
+Two things in that diagram are easy to get wrong and are drawn deliberately:
 
-`.github/workflows/ci.yml` runs on pushes to `main` and `hardening`, on pull requests to `main`,
-and on demand. Two jobs:
+- **`JwtAuthenticationFilter` queries PostgreSQL on every authenticated request**, to load the
+  user whose id, role and limit the limiter then uses. The rate limit decision itself touches only
+  Redis, but the request as a whole does hit the database. An earlier version of this README and a
+  javadoc both implied otherwise.
+- **The management port is a separate server.** Prometheus reaches it over the Compose network;
+  no published port maps to it. See [ADR 1](docs/adr/0001-actuator-on-a-separate-unpublished-port.md).
 
-| Job | Does |
-|-----|------|
-| `build` | JDK 21 (Temurin) with a Maven cache, `./mvnw -B verify`, then uploads the surefire, failsafe and JaCoCo reports as artifacts |
-| `image` | `docker build`, then a Trivy scan of the resulting image, published to the log and as an artifact |
+---
 
-The first run on `hardening` was green in 4m42s and produced three artifacts: `test-reports`,
-`jacoco-report` and `trivy-report`. The badge above reflects the `hardening` branch; point it at
-`main` once this work merges.
+## Algorithms
 
-Every action is pinned to a commit SHA rather than a tag, because a tag can be moved to point at
-different code. The readable version is kept in a trailing comment and Dependabot updates both
-together.
+All three keep their state in Redis and make each decision in a single `EVAL`, so concurrency
+cannot push the count past the limit. Switch at runtime with `POST /admin/algorithm`.
 
-The Trivy scan is **report-only**: it runs with `exit-code: 0`, so findings are published but do
-not fail the pipeline. That is deliberate for now — the image inherits vulnerabilities from its
-base image and from Spring Boot's own dependency set, and failing the build on them before they
-have been triaged would only train people to ignore a red pipeline. Once the findings have been
-read and the unavoidable ones accepted, set `exit-code` to `1` so new ones fail the build.
+| Algorithm | How it decides | Boundary behaviour |
+|-----------|----------------|--------------------|
+| `fixed-window` | One counter per user per window, incremented and expired in one script | A caller can use its whole allowance at the end of one window and again at the start of the next |
+| `token-bucket` | Capacity is the tier limit, refilled at limit/60 per second | Permits a burst up to capacity, then settles to the steady rate |
+| `sliding-window` | Current window plus a weighted share of the previous one | No boundary burst; the default |
 
-Dependabot (`.github/dependabot.yml`) raises weekly updates for Maven dependencies, Docker base
-images and the workflow actions. Spring Boot's modules are grouped into a single pull request
-because they are released together and have to move together.
+Three properties worth stating because they were not true of the original implementation:
+
+- **The clock is Redis's**, read with `redis.call('TIME')` inside the script, so two application
+  instances cannot disagree about which window a request falls in.
+  [ADR 2](docs/adr/0002-redis-time-as-the-clock.md).
+- **Capacity follows the caller's tier.** The token bucket used a hardcoded capacity of 10, so a
+  PREMIUM caller was limited as if free while the headers advertised 100.
+- **Keys carry a per-user hash tag**, `{sliding:alice}:current`, so a Redis Cluster keeps one
+  user's keys in one slot and a multi-key script stays legal.
+
+`X-RateLimit-Reset` is milliseconds for every algorithm. `Retry-After` is whole seconds, rounded
+up, never below 1.
+
+---
+## API
+
+All responses are JSON. Errors are JSON too: 401 unauthenticated, 403 unauthorised, 400
+validation (with a `fields` map), 404 unknown. A bare exception never becomes a 500 with a stack
+trace.
+
+### Authentication
+
+`POST /auth/register` — creates a USER-tier account.
+
+```bash
+curl -X POST http://127.0.0.1:8080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","email":"alice@example.com","password":"password123"}'
+```
+
+`POST /auth/login` — returns a token.
+
+```bash
+curl -X POST http://127.0.0.1:8080/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"alice","password":"password123"}'
+```
+
+Both are capped at 5 requests per minute per client IP; further attempts get 429 with
+`Retry-After`. `X-Forwarded-For` is trusted only when `ratelimit.auth.trust-forwarded-for` is on,
+because a client can forge it.
+
+### The rate limited endpoint
+
+`GET /api/data` — the endpoint the limiter protects.
+
+```bash
+curl -i http://127.0.0.1:8080/api/data -H "Authorization: Bearer $TOKEN"
+```
+
+```
+X-RateLimit-Limit: 10          the limit the limiter actually enforced
+X-RateLimit-Remaining: 7
+X-RateLimit-Reset: 45000       milliseconds
+X-Algorithm: sliding-window    or local-fallback while the breaker is open
+X-User-Role: USER
+Retry-After: 45                on 429 only; whole seconds, never below 1
+```
+
+`GET /api/status` — the caller's own tier, limit and the active algorithm.
+
+### Admin
+
+Everything under `/admin` requires the ADMIN role. The ones worth knowing, not the whole
+set — `/admin/bucket/{username}`, `/admin/sliding/{username}` and `/admin/compare/{username}`
+also exist and report per-algorithm state for one user:
+
+| Endpoint | Does |
+|----------|------|
+| `GET /admin/stats` | Active users and keys, from a bounded `SCAN`, with a `truncated` flag |
+| `GET /admin/user/{username}` | The limit that would actually be enforced for a user |
+| `POST /admin/limit` | Sets a user's limit and/or role |
+| `DELETE /admin/reset/{username}` | Clears that user's counters across all algorithms |
+| `GET /admin/algorithm` | The active algorithm and the accepted names |
+| `POST /admin/algorithm` | Switches it; an unknown name is 400 and changes nothing |
+| `GET /admin/circuit` | Circuit breaker state, failure count, thresholds |
+| `POST /admin/circuit/reset` | Forces the breaker back to CLOSED |
+| `GET /admin/health` | Redis reachability, by writing a probe key |
+
+The first ADMIN has to be made directly in the database; no endpoint creates one.
+
+---
+
+## Operating it
+
+### Metrics
+
+Micrometer exports to `/actuator/prometheus` on the management port. The ones worth knowing:
+
+| Metric | Is |
+|--------|-----|
+| `ratelimit_requests_total{allowed,algorithm}` | Every decision, by outcome and algorithm |
+| `ratelimit_requests_denied_total{algorithm}` | Denials |
+| `ratelimit_check_duration_seconds{algorithm,result}` | How long a check took |
+| `app_circuitbreaker_state` | 0 CLOSED, 1 HALF_OPEN, 2 OPEN |
+| `http_server_requests_seconds` | Request latency, with a histogram for percentiles |
+
+None of them carries a per-user label. Tagging by user id would create one time series per user
+and grow without bound.
+
+### Alerts
+
+[`prometheus/rules/ratelimitx.rules.yml`](prometheus/rules/ratelimitx.rules.yml) holds seven
+rules: the scrape target down, any 5xx, the breaker OPEN, the breaker failing to return to CLOSED,
+the local fallback in use, near-total denial, and p95 latency on `/api/data`. Each one records in
+a comment where its threshold came from, and two say plainly that they are round numbers chosen
+for headroom rather than measured targets.
+
+There is **no Alertmanager** in `docker-compose.yml`, so these fire into Prometheus' own alert
+list at http://127.0.0.1:9090/alerts and reach nobody. Routing them is a deployment concern this
+repository does not solve.
+
+### Kubernetes
+
+[`k8s/`](k8s) deploys two application replicas behind a Service, with single-replica Redis and
+PostgreSQL StatefulSets. [docs/kubernetes.md](docs/kubernetes.md) covers what is deployed, the
+decisions behind the probes and the Secret, and what it does not establish.
+
+---
+
+## Measured results
+
+Every number in these documents is generated from committed raw data by a script with its own
+tests. None is typed by hand, and anything that could not be read from the data says
+"not measured" instead.
+
+| Document | Covers |
+|----------|--------|
+| [docs/benchmarks.md](docs/benchmarks.md) | Throughput and latency under stepped load, three runs |
+| [docs/failure-test.md](docs/failure-test.md) | Redis frozen for 40s under load, single instance |
+| [docs/failure-test-kubernetes.md](docs/failure-test-kubernetes.md) | The same, on Kubernetes with two replicas |
+| [docs/pod-kill-test.md](docs/pod-kill-test.md) | One of two replicas deleted under load |
+| [docs/slo.md](docs/slo.md) | What has been measured, and why no objective is set from it |
+
+Reproduce any of them:
+
+```bash
+scripts/benchmark.sh --runs 3 --algorithm sliding-window
+```
+
+```bash
+scripts/failure-test.sh --platform compose
+```
+
+```bash
+scripts/pod-kill-test.sh
+```
+
+Each script records the machine, the container limits, the Docker and Kubernetes versions, the
+load parameters and the commit it ran at, and marks the run if the working tree was dirty.
+
+---
+## Design decisions and limitations
+
+Four decisions with real trade-offs have their own records:
+
+| ADR | Decision |
+|-----|----------|
+| [1](docs/adr/0001-actuator-on-a-separate-unpublished-port.md) | Actuator on a separate port that is not published, rather than ADMIN-gated on the API port |
+| [2](docs/adr/0002-redis-time-as-the-clock.md) | The Lua scripts take the clock from Redis, not from the application |
+| [3](docs/adr/0003-per-instance-fallback.md) | Fall back to a per-instance in-memory limiter, and accept over-admission |
+| [4](docs/adr/0004-readiness-excludes-redis.md) | Keep Redis out of the readiness probe |
+
+### Limitations
+
+These are properties of the system as it stands, not a to-do list.
+
+- **Redis is a single point of failure for correct limits.** One instance, no replication, no
+  Sentinel. Its outage does not stop the service, but while it lasts the limits are approximate.
+- **During a Redis outage the enforced limit is per instance, not global.** N instances admit up
+  to N times the configured rate between them, and a failover hands every caller a fresh window.
+  Measured, not estimated: see the failure test and [ADR 3](docs/adr/0003-per-instance-fallback.md).
+- **PostgreSQL is a single point of failure for authentication.** It is read on every
+  authenticated request. Its outage stops registration, login and the API alike.
+- **No availability figure is claimed anywhere.** The measurements here are minutes of synthetic
+  load on one developer machine. That cannot support a statement about behaviour over a period,
+  and [docs/slo.md](docs/slo.md) sets no objective for the same reason.
+- **The benchmark numbers are a floor, not a capacity.** The load generator shared a machine with
+  the service, so the two competed for CPU, and the offered rate never reached saturation.
+- **One failure mode has been tested:** a Redis that accepts connections and stops answering. A
+  Redis that refuses connections, returns errors or loses data has not been.
+- **Node failure has not been tested.** The kind cluster has one node.
+- **No Alertmanager, no Ingress, no TLS, no NetworkPolicy, no autoscaling.** The resource requests
+  and limits in `k8s/` were sized to fit a laptop.
+- **The admin scan is bounded and says so.** `GET /admin/stats` walks at most 10,000 keys and
+  returns `truncated: true` rather than presenting a capped count as complete.
+- **Rate limit state is not durable.** Counters carry a TTL and a Redis restart drops them, which
+  costs at most one window.
+
+---
 
 ## Testing
+
+`./mvnw -B verify` runs everything: 65 unit tests and 98 integration tests. The integration tests
+use Testcontainers, so Docker must be running.
 
 | Suite | Kind | Covers |
 |-------|------|--------|
@@ -827,76 +390,80 @@ because they are released together and have to move together.
 | `SecurityIT` | Testcontainers + MockMvc | Absent, forged, expired and orphaned tokens; role enforcement; actuator exposure |
 | `AuthThrottleIT` | Testcontainers + MockMvc | Per-IP login and register throttling, `Retry-After`, `X-Forwarded-For` handling |
 | `ApiRateLimitIT` | Testcontainers + MockMvc | 200-then-429 with correct headers for every tier and algorithm |
+| `AdminUserLimitIT` | Testcontainers + MockMvc | `POST /admin/limit` changes the limit actually enforced, measured on `/api/data` |
 | `RedisOutageIT` | Testcontainers | Redis paused under load: no 5xx, breaker opens, fallback serves, recovery closes it |
-| `AdminUserLimitIT` | Testcontainers + MockMvc | `POST /admin/limit` changes the limit that is actually enforced, measured on `/api/data` rather than trusted from the response |
+
+The analysis scripts have their own suite, because a mistake in one of them puts a wrong number in
+a document:
+
+```bash
+python3 -m pytest scripts -q
+```
+
+It covers the report generators, the Kubernetes manifests' invariants, and the consistency of
+every hand-written figure in [docs/slo.md](docs/slo.md), [docs/kubernetes.md](docs/kubernetes.md)
+and this README against the committed runs.
+
+JaCoCo writes a coverage report to `target/site/jacoco/index.html`. There is no coverage gate.
 
 ---
 
-## Smoke Test
+## Continuous integration
 
-From a fresh clone, this is the whole check:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on pushes to `main` and `hardening`,
+on pull requests to `main`, and on demand.
 
-```bash
-cp .env.example .env
+| Job | Does |
+|-----|------|
+| `build` | JDK 21 with a Maven cache, `./mvnw -B verify`, uploads the surefire, failsafe and JaCoCo reports |
+| `scripts` | The pytest suite, plus `promtool` over the Prometheus config and alert rules |
+| `kubernetes` | Installs kind from a checksum-verified binary, runs `scripts/kind-up.sh`, then the pod kill test under load; fails on a single 5xx or dropped connection |
+| `image` | `docker build`, a Trivy report at CRITICAL/HIGH/MEDIUM, and a gate that fails the build on a fixable CRITICAL |
+
+Every action is pinned to a commit SHA rather than a tag, because a tag can be moved to point at
+different code. The readable version sits in a trailing comment and Dependabot updates both
+together. Dependabot raises weekly updates for Maven dependencies, Docker base images and the
+actions, with Spring Boot's modules grouped into one pull request because they are released
+together.
+
+A rule file with a typo loads as nothing and its alerts silently never fire, which is worse than
+having no rules, so `promtool` parses them on every push.
+
+---
+
+## Layout
+
 ```
-
-```bash
-docker compose up -d --build
-```
-
-```bash
-scripts/smoke-test.sh
-```
-
-It asserts rather than prints: that an unauthenticated request gets 401 and not 403, that a
-forged token is refused, that the management port is **not** reachable from the host, that
-registration and login work, that a new USER-tier account gets exactly 10 admissions and 5
-denials out of 15 requests with a usable `Retry-After`, that the rate limit headers are present,
-that a USER cannot reach `/admin`, and that the metrics the dashboards and alert rules are built
-on exist. It exits non-zero if any of that is untrue.
-
-The same checks by hand, if you want to watch them one at a time:
-
-```bash
-docker compose ps
-```
-
-```bash
-docker exec ratelimitx-app curl -fsS http://localhost:9091/actuator/health
-```
-
-```bash
-curl -X POST http://localhost:8080/auth/register -H "Content-Type: application/json" -d '{"username":"testuser","email":"test@example.com","password":"password123"}'
-```
-
-Registration and login are limited to 5 requests per minute per client IP; further attempts
-return 429 with a `Retry-After` header.
-
-```bash
-TOKEN=$(curl -s -X POST http://localhost:8080/auth/login -H "Content-Type: application/json" -d '{"username":"testuser","password":"password123"}' | jq -r '.token')
-```
-
-```bash
-for i in $(seq 1 15); do curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/data -H "Authorization: Bearer $TOKEN"; done
-```
-
-The first 10 requests return 200 and the rest return 429 for a USER-tier account.
-
-```bash
-docker exec ratelimitx-app curl -s http://localhost:9091/actuator/prometheus | grep ratelimit
+RateLimitX/
+├── src/main/java/com/ratelimitx/core/
+│   ├── circuitbreaker/     CircuitBreaker, LocalRateLimiter, failure classification
+│   ├── config/             Properties classes, each validating itself at startup
+│   ├── controller/         Auth, Api, Admin, Metrics
+│   ├── security/           JWT filter, auth throttle, entry point, principal
+│   ├── service/            The three algorithms, ResilientRateLimiter, metrics
+│   └── web/                Global exception handling
+├── src/test/java/          Unit tests and Testcontainers integration tests
+├── src/test/scala/         The Gatling simulation
+├── k8s/                    Kubernetes manifests; no Secret, by design
+├── prometheus/rules/       Alert rules
+├── scripts/                Benchmark, failure test, pod kill, smoke test, kind, analysis
+└── docs/
+    ├── adr/                Architecture decision records
+    ├── benchmarks/         Committed raw benchmark data
+    ├── failure-tests/      Committed raw failure test data, per platform
+    ├── pod-kill-tests/     Committed raw pod kill data
+    ├── claims.md           Every factual claim in this README, mapped to its evidence
+    ├── kubernetes.md       The Kubernetes deployment
+    └── slo.md              What is measured, and why no objective is set
 ```
 
 ---
 
 ## Author
 
-**Rugved Gundawar**
-
-- GitHub: [@Rugved-142](https://github.com/Rugved-142)
-- LinkedIn: [Rugved Gundawar](https://www.linkedin.com/in/rugved-gundawar/)
-
----
+**Rugved Gundawar** — [@Rugved-142](https://github.com/Rugved-142) ·
+[LinkedIn](https://www.linkedin.com/in/rugved-gundawar/)
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT. See [LICENSE](LICENSE).

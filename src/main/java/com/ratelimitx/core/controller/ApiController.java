@@ -17,8 +17,14 @@ import org.springframework.web.bind.annotation.RestController;
  * The rate-limited API.
  *
  * <p>The caller's identity, role and rate limit come from {@link AuthenticatedUser}, which
- * {@code JwtAuthenticationFilter} populated when it validated the token. No endpoint here queries
- * Postgres: the per-request path touches Redis only.
+ * {@code JwtAuthenticationFilter} populated when it validated the token.
+ *
+ * <p>Nothing in this class queries Postgres, and the rate limit decision itself touches Redis
+ * only. That is not the same as saying the request does not reach the database: the filter that
+ * built the principal loaded it with {@code CustomUserDetailsService}, which reads the users
+ * table on every authenticated request. This javadoc used to claim the per-request path touched
+ * Redis alone, which was wrong and is the sort of thing a reader would reasonably rely on when
+ * reasoning about a Postgres outage.
  */
 @RestController
 @RequestMapping("/api")

@@ -397,3 +397,122 @@ def test_the_readme_points_at_the_smoke_test_script():
     assert (REPO_ROOT / "scripts" / "smoke-test.sh").is_file(), "scripts/smoke-test.sh is missing"
     assert "scripts/smoke-test.sh" in readme_text(), \
         "README.md does not mention scripts/smoke-test.sh"
+
+
+# ---------------------------------------------------------------------------
+# docs/claims.md and the README's links
+#
+# claims.md maps every factual claim in the README to the test, script or committed data that
+# backs it. Two things can rot: a path it names can move, and the README can grow a claim nobody
+# mapped. These check the first directly and the second as far as it can be checked mechanically.
+# ---------------------------------------------------------------------------
+
+CLAIMS = REPO_ROOT / "docs" / "claims.md"
+ADR_DIR = REPO_ROOT / "docs" / "adr"
+
+
+def claims_text() -> str:
+    if not CLAIMS.is_file():
+        pytest.skip("docs/claims.md is not present")
+    return CLAIMS.read_text(encoding="utf-8")
+
+
+def backticked_paths(text: str) -> list[str]:
+    """Paths named in backticks.
+
+    A backticked token is a path when it names a source file or sits under a directory of this
+    repository. Commands (`./mvnw -B verify`) and HTTP endpoints (`POST /admin/algorithm`) also
+    appear in backticks and are not paths, so anything containing a space is skipped, as is
+    anything starting with a URL path this service serves.
+    """
+    roots = ("src/", "docs/", "scripts/", "k8s/", "prometheus/", "grafana/", ".github/")
+    out = []
+    for token in re.findall(r"`([^`\n]+)`", text):
+        token = token.strip()
+        if " " in token:
+            continue
+        if token.endswith((".java", ".py", ".sh", ".yml", ".yaml", ".properties", ".scala")):
+            out.append(token)
+        elif token.startswith(roots):
+            out.append(token)
+    return out
+
+
+def test_every_file_claims_md_names_exists():
+    """claims.md says this is checked, so it had better be."""
+    missing = []
+    for path in backticked_paths(claims_text()):
+        if "*" in path:
+            # A glob such as docs/failure-tests/*/summary.json: at least one match is enough.
+            if not list(REPO_ROOT.glob(path)):
+                missing.append(path)
+            continue
+        if (REPO_ROOT / path).exists():
+            continue
+        # A bare file name, such as a test class, resolves against the source tree.
+        if list((REPO_ROOT / "src").rglob(Path(path).name)):
+            continue
+        missing.append(path)
+    assert not missing, f"docs/claims.md names files that do not exist: {missing}"
+
+
+def local_links(text: str) -> list[str]:
+    links = []
+    for target in re.findall(r"\]\(([^)]+)\)", text):
+        if target.startswith(("http://", "https://", "#", "mailto:")):
+            continue
+        links.append(target.split("#", 1)[0])
+    return [link for link in links if link]
+
+
+def test_every_local_link_in_the_readme_resolves():
+    missing = [link for link in local_links(readme_text())
+               if not (REPO_ROOT / link).exists()]
+    assert not missing, f"README.md links to files that do not exist: {missing}"
+
+
+def test_every_local_link_in_claims_md_resolves():
+    missing = [link for link in local_links(claims_text())
+               if not (CLAIMS.parent / link).exists()]
+    assert not missing, f"docs/claims.md links to files that do not exist: {missing}"
+
+
+def test_every_adr_is_linked_from_the_readme_and_the_index():
+    if not ADR_DIR.is_dir():
+        pytest.skip("docs/adr is not present")
+    adrs = sorted(p.name for p in ADR_DIR.glob("0*.md"))
+    assert adrs, "docs/adr contains no decision records"
+    readme = readme_text()
+    index = (ADR_DIR / "README.md").read_text(encoding="utf-8")
+    unlinked = [name for name in adrs if name not in readme]
+    assert not unlinked, f"ADRs not linked from README.md: {unlinked}"
+    unindexed = [name for name in adrs if name not in index]
+    assert not unindexed, f"ADRs missing from docs/adr/README.md: {unindexed}"
+
+
+# A measured figure is one that came out of a run: a latency, a throughput, a percentile. The
+# README deliberately quotes none of them and links to the generated reports instead, so that
+# re-running a benchmark cannot leave a stale number in it. Configuration values - tier limits,
+# ports, thread counts in test descriptions - are not measurements and are expected.
+MEASURED_FIGURE_PATTERNS = [
+    r"\d+(?:\.\d+)? ?ms\b",
+    r"\d+(?:\.\d+)? ?(?:req|requests|decisions)/s\b",
+    r"\d+(?:\.\d+)? ?(?:rps|qps)\b",
+    r"p(?:50|75|95|99)\D{0,12}\d",
+    r"\d+(?:\.\d+)? ?% ?(?:availability|uptime|of the time)",
+    r"99\.9+ ?%",
+]
+
+
+@pytest.mark.parametrize("pattern", MEASURED_FIGURE_PATTERNS)
+def test_the_readme_quotes_no_measured_figure(pattern):
+    hits = re.findall(pattern, readme_text(), flags=re.IGNORECASE)
+    assert not hits, (
+        f"README.md quotes what looks like a measured figure {hits}; link to the generated "
+        "report instead, so a re-run cannot leave it stale"
+    )
+
+
+def test_the_readme_says_where_its_claims_are_mapped():
+    assert "docs/claims.md" in readme_text(), \
+        "README.md does not point at docs/claims.md"
