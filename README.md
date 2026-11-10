@@ -4,6 +4,7 @@ A distributed rate limiting service built with Spring Boot, Redis and PostgreSQL
 JWT authentication with per-role rate limits, three rate limiting algorithms backed by Redis,
 a circuit breaker with an in-memory fallback, and Prometheus/Grafana monitoring.
 
+[![CI](https://github.com/Rugved-142/RatelimitX/actions/workflows/ci.yml/badge.svg?branch=hardening)](https://github.com/Rugved-142/RatelimitX/actions/workflows/ci.yml)
 ![Java](https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk)
 ![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.0-green?style=flat-square&logo=springboot)
 ![Spring Security](https://img.shields.io/badge/Spring%20Security-7.0.0-green?style=flat-square&logo=springsecurity)
@@ -753,6 +754,10 @@ and on demand. Two jobs:
 |-----|------|
 | `build` | JDK 21 (Temurin) with a Maven cache, `./mvnw -B verify`, then uploads the surefire, failsafe and JaCoCo reports as artifacts |
 | `image` | `docker build`, then a Trivy scan of the resulting image, published to the log and as an artifact |
+
+The first run on `hardening` was green in 4m42s and produced three artifacts: `test-reports`,
+`jacoco-report` and `trivy-report`. The badge above reflects the `hardening` branch; point it at
+`main` once this work merges.
 
 Every action is pinned to a commit SHA rather than a tag, because a tag can be moved to point at
 different code. The readable version is kept in a trailing comment and Dependabot updates both
