@@ -1,0 +1,132 @@
+# Alerting rules for RateLimitX.
+#
+# Every threshold below is a judgement call, not a measurement, and each one says what it was
+# derived from. Where a measured figure exists it is cited; see docs/benchmarks.md and
+# docs/failure-test.md. Nothing here encodes an availability target, because none has been
+# measured.
+#
+# There is no Alertmanager in docker-compose.yml, so these rules fire into Prometheus' own alert
+# list (http://localhost:9090/alerts) and nowhere else. Routing them to somewhere a human will
+# see them is a deployment concern and is deliberately not pretended at here.
+
+groups:
+  - name: ratelimitx-availability
+    rules:
+      # The most direct signal there is: Prometheus cannot scrape the application at all.
+      - alert: RateLimitXDown
+        expr: up{job="ratelimitx"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RateLimitX is not being scraped"
+          description: >-
+            Prometheus has failed to scrape {{ $labels.instance }} for over a minute. The
+            application is down, its management port is unreachable, or it is too busy to answer.
+
+      # A 5xx from this service is always a defect: a rate limit denial is a 429, and a Redis
+      # outage is handled by the circuit breaker and the local fallback, so neither should ever
+      # produce a 5xx. The failure test recorded no 5xx at all while Redis was frozen, which is
+      # why the threshold here is "any at all" rather than a rate.
+      - alert: RateLimitXServerErrors
+        expr: >-
+          sum(rate(http_server_requests_seconds_count{job="ratelimitx",status=~"5.."}[5m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RateLimitX is returning 5xx responses"
+          description: >-
+            The service has returned server errors for 2 minutes. A denial is a 429 and a Redis
+            outage is absorbed by the circuit breaker, so a 5xx is a bug rather than load.
+
+  - name: ratelimitx-dependencies
+    rules:
+      # app_circuitbreaker_state: 0 CLOSED, 1 HALF_OPEN, 2 OPEN.
+      #
+      # OPEN means every rate limit decision is being made by the per-instance in-memory
+      # fallback. The service is still answering, but the limits it enforces are approximate and
+      # multiply by the number of replicas, so this is a correctness problem even though nothing
+      # is failing. 'for: 1m' is longer than the configured 30s open timeout, so a single
+      # recovered blip does not page anyone.
+      - alert: RateLimitXCircuitBreakerOpen
+        expr: app_circuitbreaker_state{job="ratelimitx"} == 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RateLimitX circuit breaker is OPEN: limits are approximate"
+          description: >-
+            The Redis-backed limiter has been bypassed for over a minute and requests are being
+            decided by the per-instance local fallback. Limits are enforced per replica while
+            this lasts, so N replicas admit up to N times the configured rate.
+
+      # HALF_OPEN is normal for a few seconds while a probe runs. Staying there means probes keep
+      # failing, which is a Redis problem that is not resolving.
+      - alert: RateLimitXCircuitBreakerNotRecovering
+        expr: app_circuitbreaker_state{job="ratelimitx"} > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RateLimitX circuit breaker has not returned to CLOSED"
+          description: >-
+            The breaker has been out of the CLOSED state for 15 minutes. In the failure test it
+            returned to CLOSED within seconds of Redis becoming reachable again, so this points
+            at a Redis problem that is not fixing itself.
+
+  - name: ratelimitx-behaviour
+    rules:
+      # A high denial ratio is the normal, correct behaviour of a rate limiter under load: the
+      # committed benchmark denied 82.9% of decisions by design. So this threshold is set close
+      # to total - almost nothing getting through usually means a limit was misconfigured or a
+      # caller is stuck in a retry loop, not that the limiter is working.
+      #
+      # The second clause requires meaningful traffic: without it, two denied requests in an idle
+      # five minutes would be a 100% denial ratio and would fire.
+      - alert: RateLimitXNearTotalDenial
+        expr: >-
+          (
+            sum(rate(ratelimit_requests_denied_total{job="ratelimitx"}[5m]))
+            /
+            sum(rate(ratelimit_requests_total{job="ratelimitx"}[5m]))
+          ) > 0.95
+          and
+          sum(rate(ratelimit_requests_total{job="ratelimitx"}[5m])) > 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RateLimitX is denying over 95% of requests"
+          description: >-
+            Over 95% of rate limit decisions have been denials for 15 minutes. Denials are normal
+            for a rate limiter - the committed benchmark denied 82.9% by design - so this is set
+            near total, where a misconfigured limit or a client retry loop is the likelier
+            explanation.
+
+      # p95 of the whole /api/data request, measured from the histogram Micrometer publishes for
+      # http.server.requests.
+      #
+      # Threshold derivation: the committed benchmark measured a p95 of 5 ms and a maximum of
+      # 38 ms on the benchmark machine, with the load generator competing for the same CPUs. 250
+      # ms is roughly fifty times that p95 and above every maximum observed in any committed run,
+      # so it should not fire on normal operation. It is a round number chosen for headroom, not
+      # a service level objective, and no SLO is claimed from it. Re-derive it on the hardware
+      # you actually deploy to.
+      - alert: RateLimitXHighLatency
+        expr: >-
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(http_server_requests_seconds_bucket{job="ratelimitx",uri="/api/data"}[5m])
+            )
+          ) > 0.25
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RateLimitX p95 latency on /api/data is above 250 ms"
+          description: >-
+            p95 over the last 5 minutes has exceeded 250 ms for 10 minutes. The committed
+            benchmark measured 5 ms on the benchmark machine; see docs/benchmarks.md for the
+            conditions that figure was produced under.

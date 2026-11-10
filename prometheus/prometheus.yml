@@ -4,6 +4,12 @@ global:
   external_labels:
     monitor: 'ratelimitx-monitor'
 
+# Alerting rules. There is no Alertmanager in docker-compose.yml, so these fire into
+# Prometheus' own alert list at /alerts and nowhere else; routing them to a human is a deployment
+# concern. Each rule records how its threshold was derived.
+rule_files:
+  - '/etc/prometheus/rules/*.rules.yml'
+
 scrape_configs:
   # RateLimitX Application Metrics
   - job_name: 'ratelimitx'
