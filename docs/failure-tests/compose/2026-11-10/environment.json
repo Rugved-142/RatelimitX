@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-11-10T18:06:18Z",
+  "capturedAt": "2026-11-10T18:17:05Z",
   "label": "",
   "host": {
     "os": "macOS 27.0.1",
@@ -24,8 +24,8 @@
     "appReplicas": "1"
   },
   "repository": {
-    "commit": "08ba439104c0a3c9df035dc50d8a78206106528d",
-    "uncommittedChanges": true
+    "commit": "fb39e8d1b044fed308d01c59c7cd30cd5e15e10a",
+    "uncommittedChanges": false
   },
   "parameters": {
     "algorithm": "sliding-window",

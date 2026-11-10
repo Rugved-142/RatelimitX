@@ -9,37 +9,37 @@
     "failures": 0
   },
   "intervals": {
-    "deleteToPodGoneMs": 16118,
-    "deleteToFullEndpointsMs": 16059
+    "deleteToPodGoneMs": 16034,
+    "deleteToFullEndpointsMs": 15980
   },
   "requestsServedByPod": {
-    "ratelimitx-5dc98bfb87-rhcht": 439,
-    "ratelimitx-5dc98bfb87-vrx8b": 948,
-    "ratelimitx-5dc98bfb87-6nrbs": null
+    "ratelimitx-877f5cdb-k76fh": 441,
+    "ratelimitx-877f5cdb-mgzfd": 963,
+    "ratelimitx-877f5cdb-bmdd7": null
   },
   "phases": [
     {
       "name": "before",
-      "durationSeconds": 20.093,
-      "requests": 400,
-      "allowed": 400,
+      "durationSeconds": 20.097,
+      "requests": 401,
+      "allowed": 401,
       "denied": 0,
       "serverErrors": 0,
       "noResponse": 0,
       "unexpected": 0,
       "latencyMs": {
-        "p50": 7.0,
-        "p95": 13.0,
-        "p99": 55.0,
-        "max": 257.0,
-        "count": 400
+        "p50": 6.0,
+        "p95": 11.0,
+        "p99": 51.0,
+        "max": 153.0,
+        "count": 401
       }
     },
     {
       "name": "disruption",
-      "durationSeconds": 16.059,
-      "requests": 322,
-      "allowed": 322,
+      "durationSeconds": 15.98,
+      "requests": 319,
+      "allowed": 319,
       "denied": 0,
       "serverErrors": 0,
       "noResponse": 0,
@@ -47,26 +47,26 @@
       "latencyMs": {
         "p50": 5.0,
         "p95": 10.0,
-        "p99": 1977.0,
-        "max": 2231.0,
-        "count": 322
+        "p99": 1657.0,
+        "max": 1885.0,
+        "count": 319
       }
     },
     {
       "name": "after",
-      "durationSeconds": 43.953,
-      "requests": 878,
-      "allowed": 878,
+      "durationSeconds": 44.012,
+      "requests": 880,
+      "allowed": 880,
       "denied": 0,
       "serverErrors": 0,
       "noResponse": 0,
       "unexpected": 0,
       "latencyMs": {
-        "p50": 7.0,
-        "p95": 13.0,
-        "p99": 1056.0,
-        "max": 1776.0,
-        "count": 878
+        "p50": 6.0,
+        "p95": 11.0,
+        "p99": 539.0,
+        "max": 1339.0,
+        "count": 880
       }
     }
   ]

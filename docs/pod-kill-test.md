@@ -19,7 +19,7 @@ shutdown. A forced delete would skip all three.
 | Parameter | Value |
 |-----------|-------|
 | Replicas | 2 |
-| Deleted pod | `ratelimitx-5dc98bfb87-6nrbs` |
+| Deleted pod | `ratelimitx-877f5cdb-bmdd7` |
 | Offered rate | 20.0 req/s |
 | Per-user limit (requests/min) | 5,000 |
 | Load before the delete | 20.0 s |
@@ -39,8 +39,8 @@ no response at all - which is what a dropped connection during a shutdown looks 
 | Requests with no response | 0 |
 | Other unexpected statuses | 0 |
 | Total failures | 0 (0.0%) |
-| Delete issued to pod gone | 16,118 ms |
-| Delete issued to a full set of ready endpoints | 16,059 ms |
+| Delete issued to pod gone | 16,034 ms |
+| Delete issued to a full set of ready endpoints | 15,980 ms |
 
 Both intervals are measured from when the delete was issued, not from when it took
 effect, so both are upper bounds. The endpoint figure is also polled once a second, so
@@ -52,9 +52,9 @@ A request belongs to the phase it was *sent* in.
 
 | Phase | What was true | Duration | Requests | 200 | 429 | 5xx | No response | Allowed/s |
 |-------|---------------|----------|----------|-----|-----|-----|-------------|-----------|
-| before | all replicas ready | 20.1 s | 400 | 400 | 0 | 0 | 0 | 19.9 |
-| disruption | a replica missing | 16.1 s | 322 | 322 | 0 | 0 | 0 | 20.1 |
-| after | all replicas ready again | 44.0 s | 878 | 878 | 0 | 0 | 0 | 20.0 |
+| before | all replicas ready | 20.1 s | 401 | 401 | 0 | 0 | 0 | 20.0 |
+| disruption | a replica missing | 16.0 s | 319 | 319 | 0 | 0 | 0 | 20.0 |
+| after | all replicas ready again | 44.0 s | 880 | 880 | 0 | 0 | 0 | 20.0 |
 
 ### Response time by phase
 
@@ -63,9 +63,9 @@ response time.
 
 | Phase | Responses | p50 | p95 | p99 | max |
 |-------|-----------|-----|-----|-----|-----|
-| before | 400 | 7 ms | 13 ms | 55 ms | 257 ms |
-| disruption | 322 | 5 ms | 10 ms | 1,977 ms | 2,231 ms |
-| after | 878 | 7 ms | 13 ms | 1,056 ms | 1,776 ms |
+| before | 401 | 6 ms | 11 ms | 51 ms | 153 ms |
+| disruption | 319 | 5 ms | 10 ms | 1,657 ms | 1,885 ms |
+| after | 880 | 6 ms | 11 ms | 539 ms | 1,339 ms |
 
 ## Where the requests went
 
@@ -75,9 +75,9 @@ entirely to one pod would look identical in every table above.
 
 | Pod | `/api/data` requests served |
 |-----|-----------------------------|
-| `ratelimitx-5dc98bfb87-6nrbs` | not measured: deleted during the run, its counter went with it |
-| `ratelimitx-5dc98bfb87-rhcht` | 439 |
-| `ratelimitx-5dc98bfb87-vrx8b` | 948 |
+| `ratelimitx-877f5cdb-bmdd7` | not measured: deleted during the run, its counter went with it |
+| `ratelimitx-877f5cdb-k76fh` | 441 |
+| `ratelimitx-877f5cdb-mgzfd` | 963 |
 
 ## What this does not show
 
@@ -94,11 +94,11 @@ entirely to one pod would look identical in every table above.
 
 | Item | Value |
 |------|-------|
-| Captured | 2026-11-10T18:04:49Z |
+| Captured | 2026-11-10T18:15:36Z |
 | Host | Darwin 27.0.0 (arm64) |
 | Kubernetes server | v1.37.0 |
-| Commit | `08ba439104c0a3c9df035dc50d8a78206106528d` |
-| Source at run time | **uncommitted changes present** |
+| Commit | `fb39e8d1b044fed308d01c59c7cd30cd5e15e10a` |
+| Source at run time | committed, excluding this run's own output |
 
 ## Reproducing this
 

@@ -37,9 +37,9 @@ Each figure links to the run that produced it. Nothing here is a target.
 | Decision latency, p99 | 6 ms | as above | [benchmarks](benchmarks.md) |
 | Decision throughput | 92.2 decisions/s | a floor: the offered rate never exceeded 150/s and the load generator shared the machine | [benchmarks](benchmarks.md) |
 | Failures during a 40 s Redis outage | 0 of 2,800 requests | 5 users at 20 req/s, Redis frozen with `docker compose pause` | [failure test](failure-test.md) |
-| Redis failure to breaker OPEN | 425 ms | upper bound; polled every 100 ms | [failure test](failure-test.md) |
-| Breaker OPEN to CLOSED once Redis returned | 30,129 ms | paced by the configured 30 s open timeout, not by Redis | [failure test](failure-test.md) |
-| Requests served by the local fallback | 1,205 | during and after the 40 s pause | [failure test](failure-test.md) |
+| Redis failure to breaker OPEN | 513 ms | upper bound; polled every 100 ms | [failure test](failure-test.md) |
+| Breaker OPEN to CLOSED once Redis returned | 29,976 ms | paced by the configured 30 s open timeout, not by Redis | [failure test](failure-test.md) |
+| Requests served by the local fallback | 1,206 | during and after the 40 s pause | [failure test](failure-test.md) |
 
 The two latency figures were produced under a load shape that denied 82.9% of requests by design.
 A denial is cheaper to serve than an admission, so these are not comparable with a lightly loaded
@@ -95,7 +95,7 @@ breaker closing again.
 - **The fallback's limits are per instance, and its counters start empty.** N replicas running
   the fallback admit up to N times the configured rate between them, and a failover hands every
   caller a fresh window regardless of how much of their Redis window they had spent. The failure
-  test measured this directly: admissions rose from 16.7 to 20.0 per second - the full offered
+  test measured this directly: admissions rose from 16.6 to 19.9 per second - the full offered
   rate - while Redis was frozen, with no change to the configured limit.
 - **Recovery is paced by the breaker's open timeout, not by Redis.** With the configured 30
   seconds, a Redis outage that ends at the wrong moment leaves the service on the fallback for up

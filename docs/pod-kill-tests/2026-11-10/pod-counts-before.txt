@@ -1,2 +1,2 @@
-ratelimitx-5dc98bfb87-6nrbs 0
-ratelimitx-5dc98bfb87-vrx8b 0
+ratelimitx-877f5cdb-bmdd7 0
+ratelimitx-877f5cdb-mgzfd 0

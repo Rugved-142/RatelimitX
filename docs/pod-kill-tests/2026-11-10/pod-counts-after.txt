@@ -1,2 +1,2 @@
-ratelimitx-5dc98bfb87-rhcht 439
-ratelimitx-5dc98bfb87-vrx8b 948
+ratelimitx-877f5cdb-k76fh 441
+ratelimitx-877f5cdb-mgzfd 963

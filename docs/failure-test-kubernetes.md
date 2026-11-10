@@ -51,9 +51,9 @@ and requests that received no response at all.
 | Requests with no response (client timeouts and connection errors) | 0 |
 | Other unexpected statuses | 0 |
 | Total failures | 0 (0.0%) |
-| Pause to breaker observed OPEN | 545 ms |
-| Unpause to breaker observed CLOSED | 20,757 ms |
-| Breaker's last entry into OPEN, to observed CLOSED | 30,114 ms |
+| Pause to breaker observed OPEN | 687 ms |
+| Unpause to breaker observed CLOSED | 20,792 ms |
+| Breaker's last entry into OPEN, to observed CLOSED | 30,118 ms |
 
 The time to close is not the time Redis took to come back. The breaker only lets a
 probe through once its open timeout has elapsed, so recovery is paced by that timer
@@ -76,7 +76,7 @@ A request belongs to the phase it was *sent* in.
 |-------|----------|----------|-----|-----|-----|-------------|-----------|--------------------|
 | baseline | 30.1 s | 599 | 500 | 99 | 0 | 0 | 16.6 | 0 |
 | outage | 40.3 s | 806 | 802 | 4 | 0 | 0 | 19.9 | 795 |
-| recovery | 69.8 s | 1,395 | 1,067 | 328 | 0 | 0 | 15.3 | 413 |
+| recovery | 69.8 s | 1,395 | 1,057 | 338 | 0 | 0 | 15.1 | 414 |
 
 `Served by fallback` counts responses whose `X-Algorithm` header was `local-fallback`,
 which is the service reporting on itself rather than an inference from the timing.
@@ -102,9 +102,9 @@ answer.
 
 | Phase | Responses | p50 | p95 | p99 | max |
 |-------|-----------|-----|-----|-----|-----|
-| baseline | 599 | 6 ms | 10 ms | 27 ms | 39 ms |
-| outage | 806 | 4 ms | 9 ms | 205 ms | 212 ms |
-| recovery | 1,395 | 5 ms | 7 ms | 9 ms | 18 ms |
+| baseline | 599 | 6 ms | 9 ms | 13 ms | 30 ms |
+| outage | 806 | 4 ms | 7 ms | 205 ms | 209 ms |
+| recovery | 1,395 | 4 ms | 7 ms | 9 ms | 12 ms |
 
 ## Circuit breaker timeline
 
@@ -113,13 +113,13 @@ Times are relative to the moment Redis was paused. A negative value is before it
 | Observed state | Relative to pause |
 |----------------|-------------------|
 | CLOSED | -29.9 s |
-| OPEN | +0.5 s |
+| OPEN | +0.7 s |
 | HALF_OPEN | +30.6 s |
 | OPEN | +30.9 s |
 | HALF_OPEN | +60.9 s |
-| CLOSED | +61.0 s |
+| CLOSED | +61.1 s |
 
-Polls recorded: 1,278, of which 0 got no answer.
+Polls recorded: 1,280, of which 0 got no answer.
 
 ## What this does not show
 
@@ -144,17 +144,17 @@ Polls recorded: 1,278, of which 0 got no answer.
 
 | Item | Value |
 |------|-------|
-| Captured | 2026-11-10T18:01:54Z |
+| Captured | 2026-11-10T18:12:41Z |
 | OS | macOS 27.0.1 |
 | CPU | Apple M3 Pro (11 logical) |
 | Platform | kubernetes |
 | Application replicas | 2 |
 | Kubernetes server | v1.37.0 |
 | Node image | Debian GNU/Linux 13 (trixie) |
-| Pod whose breaker was timed | ratelimitx-7565ff5dcf-b5pg5 |
+| Pod whose breaker was timed | ratelimitx-86c67749bc-jj2gd |
 | Redis container restarts during the run | none |
 | Docker engine | 29.6.2 |
-| Commit | `08ba439104c0a3c9df035dc50d8a78206106528d` |
+| Commit | `fb39e8d1b044fed308d01c59c7cd30cd5e15e10a` |
 | Source at run time | committed, excluding this run's own output |
 
 ## Reproducing this
