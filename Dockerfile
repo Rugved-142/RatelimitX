@@ -21,7 +21,14 @@ RUN mvn package -DskipTests
 FROM eclipse-temurin:21-jre
 
 # curl is needed by HEALTHCHECK below; the JRE image does not ship it.
+#
+# The upgrade picks up security fixes published for the base image since its last build. A scan
+# of this image found two HIGH findings in apt and libapt-pkg, both with a fix available and
+# neither reachable without it. It does mean the installed package set depends on when the image
+# was built, which is already true of apt-get update; pin the base image digest if a build has to
+# be byte-identical over time.
 RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 

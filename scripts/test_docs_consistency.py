@@ -298,3 +298,92 @@ def test_the_kubernetes_documents_claim_no_availability_figure():
 
 def test_the_kubernetes_document_says_what_it_does_not_establish():
     assert "not high availability" in kubernetes_text().lower()
+
+
+# ---------------------------------------------------------------------------
+# README claims about the test suite
+#
+# The README said "65 unit tests and 89 integration tests" for two phases after the integration
+# count became 98, and its Testing table never gained the class added in Phase 7. Test counts are
+# figures like any other and are checked here for the same reason.
+# ---------------------------------------------------------------------------
+
+README = REPO_ROOT / "README.md"
+SRC_TEST_JAVA = REPO_ROOT / "src" / "test" / "java"
+
+
+def readme_text() -> str:
+    if not README.is_file():
+        pytest.skip("README.md is not present")
+    return README.read_text(encoding="utf-8")
+
+
+def java_test_class_names() -> set[str]:
+    if not SRC_TEST_JAVA.is_dir():
+        return set()
+    return {path.stem for path in SRC_TEST_JAVA.rglob("*.java")}
+
+
+def surefire_total(report_dir: Path) -> int | None:
+    """Total tests from a Maven report directory, or None when it has not been produced.
+
+    Reports whose class no longer exists in src/test/java are ignored. target/ is not cleaned
+    between builds, so a report left behind by a class that has since been deleted otherwise
+    counts as tests that ran - which is how this check first disagreed with the build by one, on
+    the strength of a probe class removed two phases earlier.
+    """
+    if not report_dir.is_dir():
+        return None
+    classes = java_test_class_names()
+    total = 0
+    found = False
+    for path in report_dir.glob("*.txt"):
+        simple_name = path.stem.rsplit(".", 1)[-1]
+        if classes and simple_name not in classes:
+            continue
+        match = re.search(r"Tests run: (\d+)", path.read_text(encoding="utf-8", errors="replace"))
+        if match:
+            total += int(match.group(1))
+            found = True
+    return total if found else None
+
+
+@pytest.mark.parametrize("kind,report,pattern", [
+    ("unit", "surefire-reports", r"(\d+) unit tests"),
+    ("integration", "failsafe-reports", r"(\d+) integration tests"),
+])
+def test_the_readme_test_counts_match_the_last_build(kind, report, pattern):
+    """Skips when the build has not run here; in CI the build job produces the reports."""
+    actual = surefire_total(REPO_ROOT / "target" / report)
+    if actual is None:
+        pytest.skip(f"target/{report} is not present; run ./mvnw -B verify first")
+    match = re.search(pattern, readme_text())
+    assert match, f"README.md does not state a number of {kind} tests"
+    assert int(match.group(1)) == actual, \
+        f"README.md says {match.group(1)} {kind} tests, the last build ran {actual}"
+
+
+def test_every_test_class_appears_in_the_readme_testing_table():
+    """A suite the table does not mention is a suite nobody reading the README knows exists."""
+    if not SRC_TEST_JAVA.is_dir():
+        pytest.skip("src/test/java is not present")
+    # Only classes that actually hold tests. A shared base class such as
+    # AbstractIntegrationTest is infrastructure, not a suite, and has nothing to say in a table
+    # that tells a reader what is covered.
+    classes = sorted(
+        path.stem for path in SRC_TEST_JAVA.rglob("*.java")
+        if path.stem.endswith(("Test", "IT"))
+        and "@Test" in path.read_text(encoding="utf-8", errors="replace")
+    )
+    if not classes:
+        pytest.skip("no test classes found")
+    text = readme_text()
+    missing = [name for name in classes if f"`{name}`" not in text]
+    assert not missing, f"test classes missing from the README Testing table: {missing}"
+
+
+def test_the_readme_points_at_the_smoke_test_script():
+    """The definition of done is a fresh clone running this script, so it has to be findable."""
+    assert (REPO_ROOT / "scripts" / "smoke-test.sh").is_file(), "scripts/smoke-test.sh is missing"
+    assert "scripts/smoke-test.sh" in readme_text(), \
+        "README.md does not mention scripts/smoke-test.sh"

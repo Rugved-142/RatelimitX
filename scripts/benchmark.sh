@@ -64,7 +64,7 @@ if [[ ! -f .env ]]; then
 fi
 
 log "Checking the stack is up"
-if ! docker compose ps --status running --services 2>/dev/null | grep -qx app; then
+if ! grep -qx app <<< "$(docker compose ps --status running --services 2>/dev/null)"; then
   echo "The app service is not running. Start it with: docker compose up -d --build" >&2
   exit 1
 fi

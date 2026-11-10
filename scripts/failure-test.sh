@@ -116,7 +116,7 @@ plat_check_running() {
       echo ".env not found. Copy .env.example and set real values first." >&2
       exit 1
     fi
-    if ! docker compose ps --status running --services 2>/dev/null | grep -qx app; then
+    if ! grep -qx app <<< "$(docker compose ps --status running --services 2>/dev/null)"; then
       echo "The app service is not running. Start it with: docker compose up -d --build" >&2
       exit 1
     fi

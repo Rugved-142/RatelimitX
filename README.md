@@ -439,7 +439,7 @@ http://127.0.0.1:3000 and Prometheus at http://127.0.0.1:9090.
 ./mvnw -B verify
 ```
 
-This runs 65 unit tests and 89 integration tests and writes a coverage report to
+This runs 65 unit tests and 98 integration tests and writes a coverage report to
 `target/site/jacoco/index.html`. The integration tests (`*IT`) start a real Redis and PostgreSQL
 with Testcontainers, so **Docker must be running**. There is no coverage threshold yet.
 
@@ -828,14 +828,34 @@ because they are released together and have to move together.
 | `AuthThrottleIT` | Testcontainers + MockMvc | Per-IP login and register throttling, `Retry-After`, `X-Forwarded-For` handling |
 | `ApiRateLimitIT` | Testcontainers + MockMvc | 200-then-429 with correct headers for every tier and algorithm |
 | `RedisOutageIT` | Testcontainers | Redis paused under load: no 5xx, breaker opens, fallback serves, recovery closes it |
+| `AdminUserLimitIT` | Testcontainers + MockMvc | `POST /admin/limit` changes the limit that is actually enforced, measured on `/api/data` rather than trusted from the response |
 
 ---
 
-## Manual Smoke Test
+## Smoke Test
+
+From a fresh clone, this is the whole check:
 
 ```bash
-docker compose up -d
+cp .env.example .env
 ```
+
+```bash
+docker compose up -d --build
+```
+
+```bash
+scripts/smoke-test.sh
+```
+
+It asserts rather than prints: that an unauthenticated request gets 401 and not 403, that a
+forged token is refused, that the management port is **not** reachable from the host, that
+registration and login work, that a new USER-tier account gets exactly 10 admissions and 5
+denials out of 15 requests with a usable `Retry-After`, that the rate limit headers are present,
+that a USER cannot reach `/admin`, and that the metrics the dashboards and alert rules are built
+on exist. It exits non-zero if any of that is untrue.
+
+The same checks by hand, if you want to watch them one at a time:
 
 ```bash
 docker compose ps

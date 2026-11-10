@@ -53,8 +53,14 @@ services:
     container_name: ratelimitx-app
     # Only the API port is published. The management port (9091) is deliberately absent: actuator
     # is reachable from inside the network, which is all Prometheus and the healthcheck need.
+    #
+    # Bound to 127.0.0.1 like every other published port here. It was on 0.0.0.0, which put an
+    # open registration endpoint on whatever network the machine happened to be joined to -
+    # a coffee shop's wifi, say - for a stack whose only intended caller is this machine. Change
+    # it deliberately if you need to reach it from another device, rather than having it be the
+    # default.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379

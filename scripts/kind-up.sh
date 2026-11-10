@@ -43,12 +43,13 @@ done
 # Cluster
 # ---------------------------------------------------------------------------
 
-if [[ "$RECREATE" == true ]] && kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
+if [[ "$RECREATE" == true ]] \
+   && grep -qx "$CLUSTER_NAME" <<< "$(kind get clusters 2>/dev/null)"; then
   log "Deleting the existing cluster"
   kind delete cluster --name "$CLUSTER_NAME"
 fi
 
-if kind get clusters 2>/dev/null | grep -qx "$CLUSTER_NAME"; then
+if grep -qx "$CLUSTER_NAME" <<< "$(kind get clusters 2>/dev/null)"; then
   log "Cluster $CLUSTER_NAME already exists"
 else
   log "Creating the cluster"

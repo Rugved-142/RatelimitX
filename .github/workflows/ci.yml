@@ -195,9 +195,9 @@ jobs:
       - name: Build image
         run: docker build --tag ratelimitx:${{ github.sha }} .
 
-      # Report-only for now: the scan runs and its findings are published, but a vulnerability in
-      # a base image does not block the pipeline. Once the findings have been read and the
-      # unavoidable ones triaged, set exit-code to 1 so regressions fail the build.
+      # The full report, for reading. Everything fixable at CRITICAL, HIGH and MEDIUM, published
+      # as an artifact and printed in the log. This step never fails the build; the gate below
+      # does that, so a new MEDIUM does not block a release while a new CRITICAL does.
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -207,6 +207,19 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM
           ignore-unfixed: true
           exit-code: "0"
+
+      # The gate. This was report-only while the pinned Spring Boot 4.0.0 dependency set carried
+      # twelve CRITICAL findings; bumping to 4.0.9 cleared all of them, so a CRITICAL now means a
+      # regression and the build should stop. Scoped to CRITICAL and to findings that have a fix
+      # available: a base image CVE with no patch yet is not something a build failure helps with.
+      - name: Fail the build on a fixable CRITICAL vulnerability
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ratelimitx:${{ github.sha }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
 
       - name: Show Trivy findings in the log
         if: always()
