@@ -9,18 +9,18 @@
     "failures": 0
   },
   "intervals": {
-    "deleteToPodGoneMs": 16034,
-    "deleteToFullEndpointsMs": 15980
+    "deleteToPodGoneMs": 15937,
+    "deleteToFullEndpointsMs": 15887
   },
   "requestsServedByPod": {
-    "ratelimitx-877f5cdb-k76fh": 441,
-    "ratelimitx-877f5cdb-mgzfd": 963,
-    "ratelimitx-877f5cdb-bmdd7": null
+    "ratelimitx-6765f8796f-d4xtt": 944,
+    "ratelimitx-6765f8796f-tqb8d": 458,
+    "ratelimitx-6765f8796f-6mrlg": null
   },
   "phases": [
     {
       "name": "before",
-      "durationSeconds": 20.097,
+      "durationSeconds": 20.085,
       "requests": 401,
       "allowed": 401,
       "denied": 0,
@@ -28,35 +28,35 @@
       "noResponse": 0,
       "unexpected": 0,
       "latencyMs": {
-        "p50": 6.0,
+        "p50": 7.0,
         "p95": 11.0,
-        "p99": 51.0,
-        "max": 153.0,
+        "p99": 17.0,
+        "max": 128.0,
         "count": 401
       }
     },
     {
       "name": "disruption",
-      "durationSeconds": 15.98,
-      "requests": 319,
-      "allowed": 319,
+      "durationSeconds": 15.887,
+      "requests": 317,
+      "allowed": 317,
       "denied": 0,
       "serverErrors": 0,
       "noResponse": 0,
       "unexpected": 0,
       "latencyMs": {
         "p50": 5.0,
-        "p95": 10.0,
-        "p99": 1657.0,
-        "max": 1885.0,
-        "count": 319
+        "p95": 9.0,
+        "p99": 1858.0,
+        "max": 2054.0,
+        "count": 317
       }
     },
     {
       "name": "after",
-      "durationSeconds": 44.012,
-      "requests": 880,
-      "allowed": 880,
+      "durationSeconds": 44.113,
+      "requests": 882,
+      "allowed": 882,
       "denied": 0,
       "serverErrors": 0,
       "noResponse": 0,
@@ -64,9 +64,9 @@
       "latencyMs": {
         "p50": 6.0,
         "p95": 11.0,
-        "p99": 539.0,
-        "max": 1339.0,
-        "count": 880
+        "p99": 1009.0,
+        "max": 1703.0,
+        "count": 882
       }
     }
   ]

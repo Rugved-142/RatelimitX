@@ -1,6 +1,6 @@
 {
-  "capturedAt": "2026-11-10T01:56:09Z",
-  "label": "local dev machine, load generator on the same host",
+  "capturedAt": "2026-11-10T20:46:35Z",
+  "label": "Spring Boot 4.0.9 baseline",
   "host": {
     "os": "macOS 27.0.1",
     "kernel": "Darwin 27.0.0",
@@ -28,7 +28,7 @@
     "compose": "5.3.1"
   },
   "repository": {
-    "commit": "28a08aa8636451aed580b0430e910e900721410d",
+    "commit": "3ae6c06d6ce098a51a9eb186b0df34c401188de3",
     "uncommittedChanges": false
   },
   "parameters": {
@@ -43,8 +43,8 @@
     "userCount": 16,
     "rpsStart": 50,
     "rpsStep": 50,
-    "rpsSteps": 3,
-    "stepSeconds": 20,
+    "rpsSteps": 4,
+    "stepSeconds": 30,
     "warmupSeconds": 10,
     "runs": 3
   }

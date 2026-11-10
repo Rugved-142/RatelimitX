@@ -99,14 +99,14 @@ cluster already needs, so neither adds a pull.
 | Measure | Value | Source |
 |---------|-------|--------|
 | Failures during a 40 s Redis freeze, 2 replicas | 0 of 2,800 requests | [failure test](failure-test-kubernetes.md) |
-| Redis frozen to breaker OPEN | 687 ms | [failure test](failure-test-kubernetes.md) |
-| Breaker's own OPEN-to-CLOSED cycle | 30,118 ms | [failure test](failure-test-kubernetes.md) |
+| Redis frozen to breaker OPEN | 923 ms | [failure test](failure-test-kubernetes.md) |
+| Breaker's own OPEN-to-CLOSED cycle | 30,142 ms | [failure test](failure-test-kubernetes.md) |
 | Failures while a replica was deleted under load | 0 of 1,600 requests | [pod kill test](pod-kill-test.md) |
-| Pod delete to a full set of ready endpoints | 15,980 ms | [pod kill test](pod-kill-test.md) |
-| Requests served by each surviving replica | 963 and 441 | [pod kill test](pod-kill-test.md) |
+| Pod delete to a full set of ready endpoints | 15,887 ms | [pod kill test](pod-kill-test.md) |
+| Requests served by each surviving replica | 944 and 458 | [pod kill test](pod-kill-test.md) |
 
 Deleting a replica under load cost no requests at all - no 5xx, no dropped connections - but it
-was not free: the slowest response during the disruption was 1,885 ms, against an 11 ms p95 before
+was not free: the slowest response during the disruption was 2,054 ms, against an 11 ms p95 before
 it. A JVM that has just started is slow for its first requests, and the readiness probe only
 establishes that it is answering, not that it is warm.
 

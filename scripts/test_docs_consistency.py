@@ -30,10 +30,20 @@ RULES = REPO_ROOT / "prometheus" / "rules" / "ratelimitx.rules.yml"
 FAILURE_RUNS = REPO_ROOT / "docs" / "failure-tests"
 
 
+def flatten(text: str) -> str:
+    """Collapse runs of whitespace, so a phrase split across a line break still matches.
+
+    These checks look for a figure in its sentence, and a hand-written document wraps where the
+    line runs out. Requiring the prose to keep a phrase on one line would be the test dictating
+    the formatting; the numbers and their order are what matter.
+    """
+    return re.sub(r"\s+", " ", text)
+
+
 def slo_text() -> str:
     if not SLO.is_file():
         pytest.skip("docs/slo.md is not present")
-    return SLO.read_text(encoding="utf-8")
+    return flatten(SLO.read_text(encoding="utf-8"))
 
 
 def latest_failure_summary() -> dict:
@@ -223,7 +233,7 @@ POD_KILL_RUNS = REPO_ROOT / "docs" / "pod-kill-tests"
 def kubernetes_text() -> str:
     if not KUBERNETES.is_file():
         pytest.skip("docs/kubernetes.md is not present")
-    return KUBERNETES.read_text(encoding="utf-8")
+    return flatten(KUBERNETES.read_text(encoding="utf-8"))
 
 
 def latest_summary(root: Path, pattern: str) -> dict:
@@ -279,7 +289,7 @@ def test_the_quoted_per_pod_split_matches_that_run():
 
 def test_the_quoted_latency_cost_of_a_pod_kill_matches_that_run():
     phases = {phase["name"]: phase for phase in pod_kill_summary()["phases"]}
-    text = kubernetes_text()
+    text = kubernetes_text()  # already whitespace-normalised
     worst = phases["disruption"]["latencyMs"]["max"]
     assert f"{worst:,.0f} ms" in text, f"docs/kubernetes.md should quote '{worst:,.0f} ms'"
     baseline_p95 = phases["before"]["latencyMs"]["p95"]

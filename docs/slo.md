@@ -32,16 +32,16 @@ Each figure links to the run that produced it. Nothing here is a target.
 
 | Indicator | Measured | Conditions | Source |
 |-----------|----------|------------|--------|
-| Decision latency, p50 | 3 ms | 16 users, stepped 50-150 req/s, sliding window | [benchmarks](benchmarks.md) |
-| Decision latency, p95 | 5 ms | as above | [benchmarks](benchmarks.md) |
-| Decision latency, p99 | 6 ms | as above | [benchmarks](benchmarks.md) |
-| Decision throughput | 92.2 decisions/s | a floor: the offered rate never exceeded 150/s and the load generator shared the machine | [benchmarks](benchmarks.md) |
+| Decision latency, p50 | 1 ms | 16 users, stepped 50-150 req/s, sliding window | [benchmarks](benchmarks.md) |
+| Decision latency, p95 | 2 ms | as above | [benchmarks](benchmarks.md) |
+| Decision latency, p99 | 3 ms | as above | [benchmarks](benchmarks.md) |
+| Decision throughput | 118.8 decisions/s | a floor: the offered rate never exceeded 200/s and the load generator shared the machine | [benchmarks](benchmarks.md) |
 | Failures during a 40 s Redis outage | 0 of 2,800 requests | 5 users at 20 req/s, Redis frozen with `docker compose pause` | [failure test](failure-test.md) |
-| Redis failure to breaker OPEN | 513 ms | upper bound; polled every 100 ms | [failure test](failure-test.md) |
-| Breaker OPEN to CLOSED once Redis returned | 29,976 ms | paced by the configured 30 s open timeout, not by Redis | [failure test](failure-test.md) |
+| Redis failure to breaker OPEN | 396 ms | upper bound; polled every 100 ms | [failure test](failure-test.md) |
+| Breaker OPEN to CLOSED once Redis returned | 30,055 ms | paced by the configured 30 s open timeout, not by Redis | [failure test](failure-test.md) |
 | Requests served by the local fallback | 1,206 | during and after the 40 s pause | [failure test](failure-test.md) |
 
-The two latency figures were produced under a load shape that denied 82.9% of requests by design.
+The two latency figures were produced under a load shape that denied 85.3% of requests by design.
 A denial is cheaper to serve than an admission, so these are not comparable with a lightly loaded
 service's latency. The benchmark document says so at more length.
 
@@ -59,7 +59,7 @@ human; routing them is a deployment concern this repository does not pretend to 
 | `RateLimitXCircuitBreakerOpen` | enforced limit | breaker OPEN for 1 m | longer than the 30 s open timeout, so a recovered blip does not page |
 | `RateLimitXCircuitBreakerNotRecovering` | enforced limit | breaker out of CLOSED for 15 m | it closed within seconds of Redis returning in the failure test |
 | `RateLimitXFallbackInUse` | enforced limit | any fallback decision in 5 m | catches outages too short to trip the rule above |
-| `RateLimitXNearTotalDenial` | behaviour | over 95% denied for 15 m | the benchmark denied 82.9% by design, so the threshold sits near total |
+| `RateLimitXNearTotalDenial` | behaviour | over 95% denied for 15 m | the benchmark denied 85.3% by design, so the threshold sits near total |
 | `RateLimitXHighLatency` | latency | p95 on `/api/data` over 250 ms for 10 m | a round number with headroom over the measured 5 ms p95; not an objective |
 
 Two of those thresholds are explicitly judgement rather than measurement. 250 ms is roughly fifty
@@ -94,9 +94,15 @@ breaker closing again.
   the service, but it does change what the service enforces.
 - **The fallback's limits are per instance, and its counters start empty.** N replicas running
   the fallback admit up to N times the configured rate between them, and a failover hands every
-  caller a fresh window regardless of how much of their Redis window they had spent. The failure
-  test measured this directly: admissions rose from 16.6 to 19.9 per second - the full offered
-  rate - while Redis was frozen, with no change to the configured limit.
+  caller a fresh window regardless of how much of their Redis window they had spent.
+
+  Whether that shows up as extra admissions depends on where in the minute-aligned window the
+  outage falls, and the two runs disagree - which says more than either would alone. On
+  Kubernetes, admissions went from 16.6 to 19.9 per second while Redis was frozen: the entire
+  offered rate, against an unchanged configured limit. On compose the same test went from 16.6 to
+  12.5 per second, because those callers had less of their window left to be handed back. The
+  generated reports state whichever happened instead of asserting the rule, so this is recorded
+  as conditional, which is what it is.
 - **Recovery is paced by the breaker's open timeout, not by Redis.** With the configured 30
   seconds, a Redis outage that ends at the wrong moment leaves the service on the fallback for up
   to another 30 seconds.

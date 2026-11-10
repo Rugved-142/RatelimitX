@@ -31,23 +31,23 @@ Median across the usable runs, with the range in brackets.
 
 | Measure | Value |
 |---------|-------|
-| Decisions per second | 92.2 |
-| Allowed per second | 15.8 |
-| Denied share of decisions (%) | 82.9 |
-| Response time p50 (ms) | 3 |
-| Response time p75 (ms) | 3 (min 3, max 4) |
-| Response time p95 (ms) | 5 (min 4, max 6) |
-| Response time p99 (ms) | 6 (min 5, max 7) |
-| Response time max (ms) | 38 (min 14, max 91) |
+| Decisions per second | 118.8 (min 118.6, max 118.8) |
+| Allowed per second | 17.4 |
+| Denied share of decisions (%) | 85.3 |
+| Response time p50 (ms) | 1 |
+| Response time p75 (ms) | 1 |
+| Response time p95 (ms) | 2 (min 2, max 3) |
+| Response time p99 (ms) | 3 (min 3, max 6) |
+| Response time max (ms) | 45 (min 39, max 186) |
 | Failed requests | 0 |
 
 ### Per run
 
 | Run | Status | Decisions | Allowed | Denied | Unexpected | Duration (s) | Decisions/s | Allowed/s |
 |-----|--------|-----------|---------|--------|------------|--------------|-------------|-----------|
-| run-1 | ok | 6,500 | 1,111 | 5,389 | 0 | 70.5 | 92.2 | 15.8 |
-| run-2 | ok | 6,500 | 1,111 | 5,389 | 0 | 70.5 | 92.2 | 15.8 |
-| run-3 | ok | 6,500 | 1,111 | 5,389 | 0 | 70.5 | 92.2 | 15.8 |
+| run-1 | ok | 15,500 | 2,273 | 13,227 | 0 | 130.7 | 118.6 | 17.4 |
+| run-2 | ok | 15,500 | 2,273 | 13,227 | 0 | 130.4 | 118.8 | 17.4 |
+| run-3 | ok | 15,500 | 2,273 | 13,227 | 0 | 130.5 | 118.8 | 17.4 |
 
 ## Load profile
 
@@ -60,14 +60,14 @@ responds, so a slowdown shows up as a queue rather than as reduced load.
 | Users | 16 |
 | Tier mix | 1 x ADMIN, 5 x PREMIUM, 10 x USER |
 | Warm-up | 10 s at 50 req/s |
-| Steps | 3 x 20 s at 50, 100, 150 req/s |
+| Steps | 4 x 30 s at 50, 100, 150, 200 req/s |
 | Runs | 3 |
 
 ## Environment
 
 | Item | Value |
 |------|-------|
-| Captured | 2026-11-10T01:56:09Z |
+| Captured | 2026-11-10T20:46:35Z |
 | OS | macOS 27.0.1 |
 | Kernel | Darwin 27.0.0 |
 | Architecture | arm64 |
@@ -81,7 +81,7 @@ responds, so a slowdown shows up as a queue rather than as reduced load.
 | Docker Compose | 5.3.1 |
 | Load generator JVM | java version "23" 2024-09-17 |
 | Load generator location | same host as the service |
-| Commit | `28a08aa8636451aed580b0430e910e900721410d` |
+| Commit | `3ae6c06d6ce098a51a9eb186b0df34c401188de3` |
 | Source at run time | committed, excluding this run's own output |
 
 The load generator ran on the same machine as the service, so Gatling and the
