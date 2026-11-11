@@ -1,10 +1,8 @@
 package com.ratelimitx.core.config;
 
-import io.micrometer.core.aop.TimedAspect;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.EnableAspectJAutoProxy;
 
 /**
  * Micrometer configuration.
@@ -15,7 +13,6 @@ import org.springframework.context.annotation.EnableAspectJAutoProxy;
  * {@code sum()} over the metric counts every request twice.
  */
 @Configuration
-@EnableAspectJAutoProxy
 public class MetricsConfig {
 
     /** Tags applied to every meter. */
@@ -23,11 +20,5 @@ public class MetricsConfig {
     public MeterRegistry.Config commonTags(MeterRegistry registry) {
         registry.config().commonTags("service", "ratelimitx");
         return registry.config();
-    }
-
-    /** Enables {@code @Timed} on methods. */
-    @Bean
-    public TimedAspect timedAspect(MeterRegistry registry) {
-        return new TimedAspect(registry);
     }
 }
