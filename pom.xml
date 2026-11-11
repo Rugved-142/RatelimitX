@@ -79,7 +79,7 @@
 		<dependency>
     		<groupId>redis.clients</groupId>
     		<artifactId>jedis</artifactId>
-    		<version>7.0.0</version>
+    		<version>8.0.2</version>
 		</dependency>
 		<!-- Gatling Dependencies -->
 		<dependency>
