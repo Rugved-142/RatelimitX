@@ -52,12 +52,18 @@ updates:
     commit-message:
       prefix: "build"
     ignore:
-      # Both base images carry the Java version, so a major bump of either is a JDK migration.
-      # That happens deliberately, not on a Monday morning pull request.
+      # Both base images carry the Java version, so moving either one is a JDK migration. That
+      # happens deliberately, not on a Monday morning pull request.
+      #
+      # The runtime image is tagged by the Java version alone, so ignoring semver-major pins it.
       - dependency-name: "eclipse-temurin"
         update-types: ["version-update:semver-major"]
+      # The build image is not: its tag is 3.9-eclipse-temurin-21, where the Java version is a
+      # suffix and the image version stays 3.9. A semver-major ignore has nothing to match, which
+      # is how Dependabot came to offer 3.9-eclipse-temurin-26. So this one is ignored outright.
+      # It only builds the jar - the runtime image above is what ships - so pinning it costs
+      # little. Bump it by hand when migrating off Java 21.
       - dependency-name: "maven"
-        update-types: ["version-update:semver-major"]
 
   # Workflow actions. These are pinned to commit SHAs; Dependabot updates the SHA and the
   # version comment together, which is the main reason SHA pinning stays maintainable.
