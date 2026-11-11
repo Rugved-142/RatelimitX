@@ -136,6 +136,22 @@
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
 
+		<!--
+			Kafka for the best-effort analytics feed. The feed is off unless
+			ratelimit.events.enabled=true; the request path never waits on it.
+
+			This is the starter, not a bare org.springframework.kafka:spring-kafka, because Boot
+			4.0 moved auto-configuration out of spring-boot-autoconfigure into per-technology
+			modules. Without spring-boot-kafka on the classpath there is no auto-configured
+			KafkaTemplate, no @KafkaListener infrastructure, no KafkaAdmin, and every
+			spring.kafka.* property is inert. Versions are the BOM's: spring-kafka 4.0.8 with
+			kafka-clients 4.1.2.
+		-->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-kafka</artifactId>
+		</dependency>
+
 		<!-- Testcontainers for integration tests; versions from testcontainers-bom above. -->
 		<dependency>
 			<groupId>org.testcontainers</groupId>
@@ -150,6 +166,11 @@
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>postgresql</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.testcontainers</groupId>
+			<artifactId>kafka</artifactId>
 			<scope>test</scope>
 		</dependency>
 

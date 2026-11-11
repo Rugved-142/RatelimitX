@@ -1,5 +1,10 @@
 package com.ratelimitx.core.controller;
 
+import java.time.Instant;
+import java.util.UUID;
+
+import com.ratelimitx.core.events.RateLimitEvent;
+import com.ratelimitx.core.events.RateLimitEventPublisher;
 import com.ratelimitx.core.model.RateLimitResult;
 import com.ratelimitx.core.security.AuthenticatedUser;
 import com.ratelimitx.core.service.PrometheusMetricsService;
@@ -28,13 +33,16 @@ public class ApiController {
 
     private final ResilientRateLimiter resilientRateLimiter;
     private final PrometheusMetricsService prometheusMetricsService;
+    private final RateLimitEventPublisher eventPublisher;
 
     public ApiController(
             ResilientRateLimiter resilientRateLimiter,
-            PrometheusMetricsService prometheusMetricsService
+            PrometheusMetricsService prometheusMetricsService,
+            RateLimitEventPublisher eventPublisher
     ) {
         this.resilientRateLimiter = resilientRateLimiter;
         this.prometheusMetricsService = prometheusMetricsService;
+        this.eventPublisher = eventPublisher;
     }
 
     @GetMapping("/data")
@@ -50,7 +58,11 @@ public class ApiController {
         long responseTime = System.currentTimeMillis() - startTime;
         String algorithm = resilientRateLimiter.getCurrentMode();
 
-        // Each of these swallows its own failures; metrics must not be able to fail a request.
+        // Both of these are deliberately incapable of failing a request: the metrics service
+        // swallows its own exceptions, and the publisher only offers to a bounded queue.
+        eventPublisher.publish(new RateLimitEvent(UUID.randomUUID(), Instant.now(), userId,
+                user.getRole().name(), algorithm, result.isAllowed(), result.getRemaining()));
+
         prometheusMetricsService.recordRequest(result.isAllowed(), algorithm);
         prometheusMetricsService.recordCheckDuration(responseTime, algorithm, result.isAllowed());
         if (!result.isAllowed()) {
