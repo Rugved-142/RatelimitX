@@ -1,0 +1,53 @@
+{
+  "capturedAt": "2026-11-11T21:46:02Z",
+  "label": "analytics feed on",
+  "host": {
+    "os": "macOS 27.0.1",
+    "kernel": "Darwin 27.0.0",
+    "arch": "arm64",
+    "cpuModel": "Apple M3 Pro",
+    "cpuCount": "11",
+    "memoryBytes": 19327352832
+  },
+  "loadGenerator": {
+    "sharesHostWithService": true,
+    "jvm": "java version \"23\" 2024-09-17"
+  },
+  "service": {
+    "javaVersion": "openjdk version \"21.0.13\" 2026-10-20 LTS",
+    "entrypoint": [
+      "java",
+      "-jar",
+      "app.jar"
+    ],
+    "containerMemoryLimitBytes": 0,
+    "containerNanoCpus": 0
+  },
+  "docker": {
+    "engine": "29.6.2",
+    "compose": "5.3.1"
+  },
+  "repository": {
+    "commit": "06fc32d34094ba289a46f48730ae771fd0c56598",
+    "uncommittedChanges": false
+  },
+  "parameters": {
+    "algorithm": "sliding-window",
+    "authThrottlePerMinuteDuringRun": 10000,
+    "baseUrl": "http://localhost:8080",
+    "tierMix": {
+      "USER": 10,
+      "PREMIUM": 5,
+      "ADMIN": 1
+    },
+    "userCount": 16,
+    "rpsStart": 50,
+    "rpsStep": 50,
+    "rpsSteps": 4,
+    "stepSeconds": 30,
+    "warmupSeconds": 10,
+    "runs": 3,
+    "eventsEnabled": true,
+    "analyticsEnabled": true
+  }
+}

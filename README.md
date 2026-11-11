@@ -61,11 +61,35 @@ Grafana is on http://127.0.0.1:3000 and Prometheus on http://127.0.0.1:9090. Eve
 binds to 127.0.0.1, including the API on 8080: nothing here is meant to be reachable from another
 machine. Change that deliberately if you need it.
 
+### With the analytics feed
+
+The feed is off by default and the broker is behind a Compose profile, so the commands above
+start the stack exactly as they did before this feature existed. To run it:
+
+```bash
+docker compose --profile kafka up -d --build
+```
+
+Set both of these in `.env` first, or the application will publish nothing:
+
+```bash
+RATELIMIT_EVENTS_ENABLED=true
+RATELIMIT_ANALYTICS_ENABLED=true
+```
+
+One Kafka node in KRaft mode, so there is no Zookeeper. The broker is on 127.0.0.1:9092 from this
+machine and `kafka:19092` from inside the network — two listeners, because a client is redirected
+to whatever the broker advertises and one name cannot serve both. Aggregates then appear at
+`GET /admin/analytics`.
+
 To tear down, including the volumes:
 
 ```bash
 docker compose down -v
 ```
+
+That leaves the broker running if it was started with the profile; add `--profile kafka` to stop
+it too.
 
 ### On Kubernetes
 
@@ -128,6 +152,7 @@ flowchart TB
         AUTH["AuthController<br/>/auth/**"]
         API["ApiController<br/>/api/**"]
         ADM["AdminController<br/>/admin/** - ADMIN only"]
+        ANA["AnalyticsController<br/>/admin/analytics - ADMIN only"]
     end
 
     subgraph Limiter["Rate limiting"]
@@ -142,6 +167,13 @@ flowchart TB
 
     subgraph Mgmt["Management :9091 - not published"]
         ACT["/actuator/prometheus"]
+    end
+
+    subgraph Feed["Analytics feed - off by default"]
+        PUB["RateLimitEventPublisher<br/><i>bounded queue, one thread</i>"]
+        KAFKA[("Kafka<br/>ratelimit-events")]
+        DLT[("ratelimit-events.DLT")]
+        CONS["AnalyticsConsumer"]
     end
 
     PROM[("Prometheus")]
@@ -159,6 +191,12 @@ flowchart TB
     Controllers -.-> ACT
     PROM -- "scrapes app:9091" --> ACT
     GRAF --> PROM
+
+    API -. "offer, never waits" .-> PUB
+    PUB -. "best effort" .-> KAFKA
+    KAFKA -. "unreadable record" .-> DLT
+    KAFKA --> CONS -- "hourly aggregates" --> PG
+    ANA --> PG
 ```
 
 Two things in that diagram are easy to get wrong and are drawn deliberately:
@@ -169,6 +207,11 @@ Two things in that diagram are easy to get wrong and are drawn deliberately:
   javadoc both implied otherwise.
 - **The management port is a separate server.** Prometheus reaches it over the Compose network;
   no published port maps to it. See [ADR 1](docs/adr/0001-actuator-on-a-separate-unpublished-port.md).
+- **Every arrow into the analytics feed is dotted, and that is the point.** The request thread
+  offers the event to a queue and returns; one background thread does the sending. A broker that
+  is down or slow costs analytics data and nothing else. The feed is off unless
+  `ratelimit.events.enabled=true`. See
+  [ADR 5](docs/adr/0005-analytics-off-the-decision-path.md).
 
 ---
 
@@ -259,6 +302,7 @@ Everything under `/admin` requires the ADMIN role.
 | `GET /admin/circuit` | Circuit breaker state, failure count, thresholds |
 | `POST /admin/circuit/reset` | Forces the breaker back to CLOSED |
 | `GET /admin/health` | Redis reachability, by writing a probe key |
+| `GET /admin/analytics` | Hourly aggregates from the analytics feed; an empty list when the feed has never run |
 
 The first ADMIN has to be made directly in the database; no endpoint creates one.
 
@@ -277,6 +321,9 @@ Micrometer exports to `/actuator/prometheus` on the management port. The ones wo
 | `ratelimit_check_duration_seconds{algorithm,result}` | How long a check took |
 | `app_circuitbreaker_state` | 0 CLOSED, 1 HALF_OPEN, 2 OPEN |
 | `http_server_requests_seconds` | Request latency, with a histogram for percentiles |
+| `ratelimit_events_published_total` | Analytics events sent to Kafka |
+| `ratelimit_events_dropped_total` | Analytics events discarded because the queue was full |
+| `ratelimit_events_failed_total` | Analytics events discarded because the send failed or timed out |
 
 None of them carries a per-user label. Tagging by user id would create one time series per user
 and grow without bound.
@@ -313,6 +360,7 @@ tests. None is typed by hand, and anything that could not be read from the data 
 | [docs/failure-test.md](docs/failure-test.md) | Redis frozen for 40s under load, single instance |
 | [docs/failure-test-kubernetes.md](docs/failure-test-kubernetes.md) | The same, on Kubernetes with two replicas |
 | [docs/pod-kill-test.md](docs/pod-kill-test.md) | One of two replicas deleted under load |
+| [docs/analytics-overhead.md](docs/analytics-overhead.md) | The analytics feed off against on, same load shape, same machine |
 | [docs/slo.md](docs/slo.md) | What has been measured, and why no objective is set from it |
 
 Reproduce any of them:
@@ -320,6 +368,10 @@ Reproduce any of them:
 ```bash
 scripts/benchmark.sh --runs 3 --algorithm sliding-window
 ```
+
+The analytics comparison is two of those, one with `RATELIMIT_EVENTS_ENABLED=false` and one with
+it true, kept apart by `--dir-suffix` and compared by
+`scripts/report_events_overhead.py`.
 
 ```bash
 scripts/failure-test.sh --platform compose
@@ -335,7 +387,7 @@ load parameters and the commit it ran at, and marks the run if the working tree 
 ---
 ## Design decisions and limitations
 
-Four decisions with real trade-offs have their own records:
+Five decisions with real trade-offs have their own records:
 
 | ADR | Decision |
 |-----|----------|
@@ -343,6 +395,7 @@ Four decisions with real trade-offs have their own records:
 | [2](docs/adr/0002-redis-time-as-the-clock.md) | The Lua scripts take the clock from Redis, not from the application |
 | [3](docs/adr/0003-per-instance-fallback.md) | Fall back to a per-instance in-memory limiter, and accept over-admission |
 | [4](docs/adr/0004-readiness-excludes-redis.md) | Keep Redis out of the readiness probe |
+| [5](docs/adr/0005-analytics-off-the-decision-path.md) | Publish analytics asynchronously, and never from the request thread |
 
 ### Limitations
 
@@ -369,12 +422,30 @@ These are properties of the system as it stands, not a to-do list.
   returns `truncated: true` rather than presenting a capped count as complete.
 - **Rate limit state is not durable.** Counters carry a TTL and a Redis restart drops them, which
   costs at most one window.
+- **Analytics delivery is best-effort, and the feed loses events.** It is an analytics stream, not
+  an audit log. An event is dropped when Kafka is down or unreachable, and when the in-memory queue
+  is full because the broker is not keeping up; each case has its own counter rather than being
+  hidden. An absent event does not mean the request did not happen, so the aggregates are a sample
+  of the decisions and not a record of them. Do not bill or audit from them.
+- **Analytics delivery is at-least-once, so the consumer deduplicates.** The event id is a primary
+  key in `processed_events`, written in the same transaction as the aggregate, which makes counting
+  at-most-once per id. Without that table a redelivery would inflate the counts.
+- **Aggregates can lag.** Events are sent from a queue by one thread, so during a stall the hourly
+  rows trail real time by however long the queue takes to drain.
+- **`processed_events` is never pruned.** The table that makes counting idempotent gains one row
+  per event and nothing ever deletes from it: there is no TTL, no scheduled cleanup and no
+  retention setting. On a long-running deployment it grows without bound, and it grows in
+  proportion to request volume rather than to the aggregates it protects. Pruning it is safe only
+  past the point where Kafka can no longer redeliver, which is the topic's retention window, and
+  nothing here enforces that relationship.
+- **Kafka is a single node under Compose, in KRaft mode.** Every replication factor is 1, so it is
+  a development broker, not a durable log. Kubernetes does not run it at all.
 
 ---
 
 ## Testing
 
-`./mvnw -B verify` runs everything: 69 unit tests and 100 integration tests. The integration tests
+`./mvnw -B verify` runs everything: 69 unit tests and 111 integration tests. The integration tests
 use Testcontainers, so Docker must be running.
 
 | Suite | Kind | Covers |
@@ -392,6 +463,11 @@ use Testcontainers, so Docker must be running.
 | `AdminUserLimitIT` | Testcontainers + MockMvc | `POST /admin/limit` changes the limit actually enforced, measured on `/api/data` |
 | `RedisOutageIT` | Testcontainers | Redis paused under load: no 5xx, breaker opens, fallback serves, recovery closes it |
 | `RedisReadinessIT` | Testcontainers | A test that leaves Redis paused must not break the next test's setup — the flake that made CI red |
+| `AnalyticsEndToEndIT` | Testcontainers + Kafka | A request becomes an hourly aggregate; a denial is counted as one; a redelivered event counts once; an admin can read the rows |
+| `EventsSurviveAKafkaOutageIT` | Testcontainers + Kafka | Broker paused under load: `/api/data` still answers 200 and the lost events are counted |
+| `EventsQueueFullIT` | Testcontainers + Kafka | A full queue drops events and counts the drops, without the request path noticing |
+| `PoisonMessageIT` | Testcontainers + Kafka | A record that cannot be deserialized is parked on the dead letter topic instead of blocking the partition |
+| `EventsDisabledIT` | Testcontainers | The default: no sending thread, no topics declared, no consumer, and no broker in existence |
 
 The analysis scripts have their own suite, because a mistake in one of them puts a wrong number in
 a document:
@@ -438,7 +514,8 @@ RateLimitX/
 ├── src/main/java/com/ratelimitx/core/
 │   ├── circuitbreaker/     CircuitBreaker, LocalRateLimiter, failure classification
 │   ├── config/             Properties classes, each validating itself at startup
-│   ├── controller/         Auth, Api, Admin, Metrics
+│   ├── controller/         Auth, Api, Admin
+│   ├── events/             The analytics feed: publisher, consumer, aggregates
 │   ├── security/           JWT filter, auth throttle, entry point, principal
 │   ├── service/            The three algorithms, ResilientRateLimiter, metrics
 │   └── web/                Global exception handling
