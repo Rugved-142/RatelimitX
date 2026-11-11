@@ -75,6 +75,12 @@ class RedisOutageIT extends AbstractIntegrationTest {
         DockerClientFactory.instance().client()
                 .unpauseContainerCmd(IntegrationTestContainers.redisContainerId()).exec();
         paused = false;
+        // Returning here would hand the rest of the test a Redis that is thawed but not yet
+        // answering. The next command would then be the one that pays for the backlog, and at the
+        // production 200ms timeout that is enough to fail the HALF_OPEN probe and reopen the
+        // breaker - so the recovery assertion below would fail for an infrastructure reason. Wait
+        // for it to be usable before continuing.
+        IntegrationTestContainers.awaitRedisSettled();
     }
 
     private String token() {

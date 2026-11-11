@@ -12,12 +12,14 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.TestPropertySource;
 
 import com.ratelimitx.core.entity.Role;
 import com.ratelimitx.core.entity.User;
 import com.ratelimitx.core.repository.UserRepository;
 import com.ratelimitx.core.security.JwtUtil;
 import com.ratelimitx.core.support.AbstractIntegrationTest;
+import com.ratelimitx.core.support.TestRedisTimeouts;
 
 /**
  * {@code POST /admin/limit} has to change the limit that is actually enforced.
@@ -27,6 +29,12 @@ import com.ratelimitx.core.support.AbstractIntegrationTest;
  * than the endpoint's own response, because the response was never the part that was wrong.
  */
 @AutoConfigureMockMvc
+// Behavioural test: it verifies rate limiting, not timeout handling, so it does not run
+// against the 200ms production Redis timeout. See TestRedisTimeouts.
+@TestPropertySource(properties = {
+        TestRedisTimeouts.COMMAND_TIMEOUT,
+        TestRedisTimeouts.CONNECT_TIMEOUT,
+})
 class AdminUserLimitIT extends AbstractIntegrationTest {
 
     @Autowired

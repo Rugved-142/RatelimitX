@@ -13,10 +13,12 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.TestPropertySource;
 
 import com.ratelimitx.core.config.RateLimitConfig;
 import com.ratelimitx.core.model.RateLimitResult;
 import com.ratelimitx.core.support.AbstractIntegrationTest;
+import com.ratelimitx.core.support.TestRedisTimeouts;
 import com.ratelimitx.core.support.Concurrently;
 
 /**
@@ -25,6 +27,12 @@ import com.ratelimitx.core.support.Concurrently;
  */
 // PER_CLASS so the algorithm factory below can be an instance method and use the injected beans.
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+// Behavioural test: it verifies rate limiting, not timeout handling, so it does not run
+// against the 200ms production Redis timeout. See TestRedisTimeouts.
+@TestPropertySource(properties = {
+        TestRedisTimeouts.COMMAND_TIMEOUT,
+        TestRedisTimeouts.CONNECT_TIMEOUT,
+})
 class RateLimitAlgorithmIT extends AbstractIntegrationTest {
 
     @Autowired

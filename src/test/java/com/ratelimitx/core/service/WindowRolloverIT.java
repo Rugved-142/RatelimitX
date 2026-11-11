@@ -12,6 +12,7 @@ import org.springframework.test.context.TestPropertySource;
 
 import com.ratelimitx.core.model.RateLimitResult;
 import com.ratelimitx.core.support.AbstractIntegrationTest;
+import com.ratelimitx.core.support.TestRedisTimeouts;
 
 /**
  * Time-dependent behaviour against a real Redis, with real waiting.
@@ -20,9 +21,13 @@ import com.ratelimitx.core.support.AbstractIntegrationTest;
  * asserting on arithmetic. These are the only tests in the suite that sleep; a mocked clock cannot
  * be used here, because the window arithmetic deliberately happens inside Redis.
  */
+// The two Redis timeouts: this verifies window rollover, not timeout handling, so it does not
+// run against the 200ms production value. See TestRedisTimeouts.
 @TestPropertySource(properties = {
         "ratelimit.window-size-seconds=2",
-        "ratelimit.max-requests=5"
+        "ratelimit.max-requests=5",
+        TestRedisTimeouts.COMMAND_TIMEOUT,
+        TestRedisTimeouts.CONNECT_TIMEOUT,
 })
 class WindowRolloverIT extends AbstractIntegrationTest {
 
