@@ -27,13 +27,10 @@ import com.ratelimitx.core.circuitbreaker.LocalRateLimiter;
 import com.ratelimitx.core.config.RateLimitConfig;
 import com.ratelimitx.core.dto.UpdateUserLimitRequest;
 import com.ratelimitx.core.entity.User;
-import com.ratelimitx.core.model.RateLimitResult;
 import com.ratelimitx.core.repository.UserRepository;
 import com.ratelimitx.core.service.RateLimitKeys;
 import com.ratelimitx.core.service.RateLimiterService;
 import com.ratelimitx.core.service.ResilientRateLimiter;
-import com.ratelimitx.core.service.SlidingWindowService;
-import com.ratelimitx.core.service.TokenBucketService;
 import com.ratelimitx.core.web.UserNotFoundException;
 
 import jakarta.validation.Valid;
@@ -49,12 +46,6 @@ public class AdminController {
 
     @Autowired
     private StringRedisTemplate redis;
-
-    @Autowired
-    private TokenBucketService tokenBucketService;
-
-    @Autowired
-    private SlidingWindowService slidingWindowService;
 
     @Autowired
     private RateLimitConfig config;
@@ -240,79 +231,6 @@ public class AdminController {
         status.put("isRateLimited", currentCount >= maxRequests);
 
         return status;
-    }
-
-    // ==================== TOKEN BUCKET ENDPOINTS ====================
-
-    @GetMapping("/bucket/{userId}")
-    public Map<String, Object> getBucketStatus(@PathVariable String userId) {
-        RateLimitResult result = tokenBucketService.getBucketStatus(userId, getUserLimit(userId));
-
-        Map<String, Object> status = new HashMap<>();
-        status.put("userId", userId);
-        status.put("algorithm", "token-bucket");
-        status.put("tokensRemaining", result.getRemaining());
-        status.put("bucketCapacity", result.getLimit());
-        status.put("isAllowed", result.isAllowed());
-
-        return status;
-    }
-
-    // ==================== SLIDING WINDOW ENDPOINTS ====================
-
-    @GetMapping("/sliding/{userId}")
-    public Map<String, Object> getSlidingWindowStatus(@PathVariable String userId) {
-        RateLimitResult result = slidingWindowService.getStatus(
-                userId, getUserLimit(userId), config.getWindowSizeSeconds());
-
-        Map<String, Object> status = new HashMap<>();
-        status.put("userId", userId);
-        status.put("algorithm", "sliding-window");
-        status.put("currentCount", result.getLimit() - result.getRemaining());
-        status.put("maxRequests", result.getLimit());
-        status.put("remainingRequests", result.getRemaining());
-        status.put("resetInMs", result.getResetTime());
-        status.put("isAllowed", result.isAllowed());
-
-        return status;
-    }
-
-    // ==================== COMPARISON ENDPOINT ====================
-
-    @GetMapping("/compare/{userId}")
-    public Map<String, Object> compareAlgorithms(@PathVariable String userId) {
-        Map<String, Object> comparison = new HashMap<>();
-
-        // Fixed Window Status
-        Map<String, Object> fixedWindow = new HashMap<>();
-        int currentCount = fixedWindowService.currentCount(userId);
-        int maxRequests = getUserLimit(userId);
-        fixedWindow.put("currentRequests", currentCount);
-        fixedWindow.put("maxRequests", maxRequests);
-        fixedWindow.put("remaining", Math.max(0, maxRequests - currentCount));
-        comparison.put("fixedWindow", fixedWindow);
-
-        // Token Bucket Status
-        RateLimitResult bucketResult = tokenBucketService.getBucketStatus(userId, maxRequests);
-        Map<String, Object> tokenBucket = new HashMap<>();
-        tokenBucket.put("tokensRemaining", bucketResult.getRemaining());
-        tokenBucket.put("bucketCapacity", bucketResult.getLimit());
-        tokenBucket.put("isAllowed", bucketResult.isAllowed());
-        comparison.put("tokenBucket", tokenBucket);
-
-        // Sliding Window Status
-        RateLimitResult slidingResult = slidingWindowService.getStatus(
-                userId, maxRequests, config.getWindowSizeSeconds());
-        Map<String, Object> slidingWindow = new HashMap<>();
-        slidingWindow.put("currentCount", slidingResult.getLimit() - slidingResult.getRemaining());
-        slidingWindow.put("maxRequests", slidingResult.getLimit());
-        slidingWindow.put("remaining", slidingResult.getRemaining());
-        comparison.put("slidingWindow", slidingWindow);
-
-        // Active algorithm
-        comparison.put("activeAlgorithm", config.getAlgorithm());
-
-        return comparison;
     }
 
     // ==================== USER MANAGEMENT ENDPOINTS ====================

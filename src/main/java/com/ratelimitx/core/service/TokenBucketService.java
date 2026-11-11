@@ -55,19 +55,7 @@ public class TokenBucketService {
         return consume(userId, 1, limit, limit / REFILL_PERIOD_SECONDS);
     }
 
-    /**
-     * Reads the bucket without consuming a token.
-     *
-     * @param limit the caller's per-minute limit, which defines the bucket being inspected
-     */
-    public RateLimitResult getBucketStatus(String userId, int limit) {
-        return consume(userId, 0, limit, limit / REFILL_PERIOD_SECONDS);
-    }
 
-    /** Reads the bucket for the configured default capacity. */
-    public RateLimitResult getBucketStatus(String userId) {
-        return getBucketStatus(userId, config.getBucketCapacity());
-    }
 
     private RateLimitResult consume(String userId, int tokens, int capacity, double refillPerSecond) {
         String key = RateLimitKeys.bucket(userId);
