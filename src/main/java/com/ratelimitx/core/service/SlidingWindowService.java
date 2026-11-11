@@ -73,10 +73,6 @@ public class SlidingWindowService {
                 resetMillis);
     }
 
-    /** Reads the window without consuming a request. */
-    public RateLimitResult getStatus(String userId) {
-        return getStatus(userId, config.getMaxRequests(), config.getWindowSizeSeconds());
-    }
 
     /**
      * Reads the window without consuming a request.

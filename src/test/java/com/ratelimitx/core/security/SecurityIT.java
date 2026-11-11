@@ -161,9 +161,11 @@ class SecurityIT extends AbstractIntegrationTest {
 
     // ==================== role enforcement ====================
 
+    // The last entry is deliberately a path that does not exist: everything under /admin must
+    // answer 403 to a non-admin, not 404, so the absence of an endpoint cannot be probed.
     @ParameterizedTest(name = "USER token cannot reach {0}")
     @ValueSource(strings = {"/admin/stats", "/admin/health", "/admin/circuit",
-            "/admin/algorithm", "/admin/user/someone", "/admin/compare/someone"})
+            "/admin/algorithm", "/admin/user/someone", "/admin/no-such-endpoint"})
     void userRoleCannotReachAdminEndpoints(String path) throws Exception {
         String token = createUserAndToken(Role.USER, 10);
 
@@ -282,7 +284,7 @@ class SecurityIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void legacyMetricsEndpointsAreDisabledByDefault() throws Exception {
+    void thereIsNoLegacyMetricsEndpoint() throws Exception {
         String token = createUserAndToken(Role.USER, 10);
 
         mockMvc.perform(get("/metrics/summary").header("Authorization", "Bearer " + token))

@@ -2,10 +2,8 @@ package com.ratelimitx.core.controller;
 
 import com.ratelimitx.core.model.RateLimitResult;
 import com.ratelimitx.core.security.AuthenticatedUser;
-import com.ratelimitx.core.service.MetricsService;
 import com.ratelimitx.core.service.PrometheusMetricsService;
 import com.ratelimitx.core.service.ResilientRateLimiter;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -31,17 +29,13 @@ import org.springframework.web.bind.annotation.RestController;
 public class ApiController {
 
     private final ResilientRateLimiter resilientRateLimiter;
-    /** Absent unless metrics.legacy.enabled=true; see MetricsService for why it is off. */
-    private final ObjectProvider<MetricsService> legacyMetrics;
     private final PrometheusMetricsService prometheusMetricsService;
 
     public ApiController(
             ResilientRateLimiter resilientRateLimiter,
-            ObjectProvider<MetricsService> legacyMetrics,
             PrometheusMetricsService prometheusMetricsService
     ) {
         this.resilientRateLimiter = resilientRateLimiter;
-        this.legacyMetrics = legacyMetrics;
         this.prometheusMetricsService = prometheusMetricsService;
     }
 
@@ -68,15 +62,6 @@ public class ApiController {
             }
         } catch (Exception e) {
             // Intentionally ignored.
-        }
-
-        MetricsService legacy = legacyMetrics.getIfAvailable();
-        if (legacy != null) {
-            try {
-                legacy.recordRequest(userId, result.isAllowed(), responseTime);
-            } catch (Exception e) {
-                // Intentionally ignored.
-            }
         }
 
         // Report the limit the limiter actually enforced, not the one we asked for: if the two

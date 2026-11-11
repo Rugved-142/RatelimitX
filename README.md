@@ -246,9 +246,7 @@ Retry-After: 45                on 429 only; whole seconds, never below 1
 
 ### Admin
 
-Everything under `/admin` requires the ADMIN role. The ones worth knowing, not the whole
-set — `/admin/bucket/{username}`, `/admin/sliding/{username}` and `/admin/compare/{username}`
-also exist and report per-algorithm state for one user:
+Everything under `/admin` requires the ADMIN role.
 
 | Endpoint | Does |
 |----------|------|
