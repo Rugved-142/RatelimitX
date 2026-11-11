@@ -19,7 +19,7 @@ file that moves cannot leave a dangling reference here.
 | Claim | Evidence |
 |-------|----------|
 | A caller authenticates with a JWT and gets a per-minute allowance from their tier | `ApiRateLimitIT` |
-| USER 10, PREMIUM 100, ADMIN 1000 requests per minute by default | `application.properties` (`ratelimit.default.*`); enforced limits asserted in `ApiRateLimitIT` and `AdminUserLimitIT` |
+| USER 10, PREMIUM 100, ADMIN 1000 requests per minute by default | `Role`, where the tier defaults are declared; enforced limits asserted in `ApiRateLimitIT` and `AdminUserLimitIT` |
 | A denied request gets 429 with `Retry-After` | `ApiRateLimitIT`; also asserted by `scripts/smoke-test.sh` |
 | `Retry-After` is whole seconds, rounded up, never below 1 | `RateLimitResult.retryAfterSeconds()`; asserted in `ApiRateLimitIT` and `scripts/smoke-test.sh` |
 | `X-RateLimit-Reset` is milliseconds for every algorithm | `RateLimitResult`; asserted per algorithm in `ApiRateLimitIT` |

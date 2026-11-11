@@ -32,7 +32,6 @@ public class RateLimitConfig {
     private final AtomicReference<String> algorithm = new AtomicReference<>(SLIDING_WINDOW);
 
     private int bucketCapacity = 10;
-    private double refillRate = 1.0;
 
     private int maxRequests = 10;
     private int windowSizeSeconds = 60;
@@ -99,14 +98,6 @@ public class RateLimitConfig {
 
     public void setBucketCapacity(int bucketCapacity) {
         this.bucketCapacity = bucketCapacity;
-    }
-
-    public double getRefillRate() {
-        return refillRate;
-    }
-
-    public void setRefillRate(double refillRate) {
-        this.refillRate = refillRate;
     }
 
     public int getMaxRequests() {
