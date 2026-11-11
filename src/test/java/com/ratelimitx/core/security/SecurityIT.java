@@ -282,7 +282,7 @@ class SecurityIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void legacyMetricsEndpointsAreDisabledByDefault() throws Exception {
+    void thereIsNoLegacyMetricsEndpoint() throws Exception {
         String token = createUserAndToken(Role.USER, 10);
 
         mockMvc.perform(get("/metrics/summary").header("Authorization", "Bearer " + token))
