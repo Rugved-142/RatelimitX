@@ -5,7 +5,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>4.0.0</version>
+		<version>4.0.9</version>
 		<relativePath/> <!-- lookup parent from repository -->
 	</parent>
 	<groupId>com.ratelimitx</groupId>
@@ -28,7 +28,23 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<!-- 1.19.3 predates the Docker engine this builds against; 1.21.3 is current stable. -->
+		<testcontainers.version>1.21.3</testcontainers.version>
+		<jacoco.version>0.8.13</jacoco.version>
+		<maven-failsafe-plugin.version>3.5.6</maven-failsafe-plugin.version>
 	</properties>
+
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>org.testcontainers</groupId>
+				<artifactId>testcontainers-bom</artifactId>
+				<version>${testcontainers.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 	<dependencies>
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
@@ -141,23 +157,20 @@
 			<artifactId>micrometer-registry-prometheus</artifactId>
 		</dependency>
 
-		<!-- Testcontainers for Integration Tests -->
+		<!-- Testcontainers for integration tests; versions from testcontainers-bom above. -->
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>testcontainers</artifactId>
-			<version>1.19.3</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>junit-jupiter</artifactId>
-			<version>1.19.3</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.testcontainers</groupId>
 			<artifactId>postgresql</artifactId>
-			<version>1.19.3</version>
 			<scope>test</scope>
 		</dependency>
 
@@ -171,6 +184,25 @@
 
 	<build>
 		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<argLine>@{jacoco.argLine}</argLine>
+					<!--
+						Docker Engine 29 refuses API versions below 1.40, while docker-java
+						still defaults to 1.32 and fails with "client version 1.32 is too old".
+						This must be the api.version system property: docker-java does not read
+						a DOCKER_API_VERSION environment variable (verified - setting the env
+						var alone leaves Testcontainers unable to find a Docker environment).
+						1.41 clears the 1.40 minimum and is supported by every Docker release
+						from 20.10 onwards, including GitHub-hosted runners.
+					-->
+					<systemPropertyVariables>
+						<api.version>1.41</api.version>
+					</systemPropertyVariables>
+				</configuration>
+			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -210,6 +242,82 @@
 				<configuration>
 					<scalaVersion>2.13.12</scalaVersion>
 				</configuration>
+			</plugin>
+
+			<!--
+				Integration tests are named *IT and run by failsafe in the integration-test
+				phase, so a container-backed test cannot be mistaken for a unit test and does
+				not run on every `mvn test`.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<version>${maven-failsafe-plugin.version}</version>
+				<configuration>
+					<argLine>@{jacoco.argLine}</argLine>
+					<!--
+						Docker Engine 29 refuses API versions below 1.40, while docker-java
+						still defaults to 1.32 and fails with "client version 1.32 is too old".
+						This must be the api.version system property: docker-java does not read
+						a DOCKER_API_VERSION environment variable (verified - setting the env
+						var alone leaves Testcontainers unable to find a Docker environment).
+						1.41 clears the 1.40 minimum and is supported by every Docker release
+						from 20.10 onwards, including GitHub-hosted runners.
+					-->
+					<systemPropertyVariables>
+						<api.version>1.41</api.version>
+					</systemPropertyVariables>
+				</configuration>
+				<executions>
+					<execution>
+						<goals>
+							<goal>integration-test</goal>
+							<goal>verify</goal>
+						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!--
+				Coverage report only; no minimum is enforced yet. Both surefire and failsafe
+				append to one exec file so the report covers unit and integration tests together.
+			-->
+			<plugin>
+				<groupId>org.jacoco</groupId>
+				<artifactId>jacoco-maven-plugin</artifactId>
+				<version>${jacoco.version}</version>
+				<configuration>
+					<destFile>${project.build.directory}/jacoco.exec</destFile>
+					<propertyName>jacoco.argLine</propertyName>
+				</configuration>
+				<executions>
+					<execution>
+						<id>prepare-agent</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>prepare-agent-integration</id>
+						<goals>
+							<goal>prepare-agent-integration</goal>
+						</goals>
+						<configuration>
+							<destFile>${project.build.directory}/jacoco.exec</destFile>
+						</configuration>
+					</execution>
+					<execution>
+						<id>report</id>
+						<phase>verify</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+						<configuration>
+							<dataFile>${project.build.directory}/jacoco.exec</dataFile>
+							<outputDirectory>${project.build.directory}/site/jacoco</outputDirectory>
+						</configuration>
+					</execution>
+				</executions>
 			</plugin>
 
 			<!-- Gatling Maven Plugin -->

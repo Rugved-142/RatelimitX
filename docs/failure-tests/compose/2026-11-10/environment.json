@@ -1,0 +1,44 @@
+{
+  "capturedAt": "2026-11-10T20:53:44Z",
+  "label": "",
+  "host": {
+    "os": "macOS 27.0.1",
+    "kernel": "Darwin 27.0.0",
+    "arch": "arm64",
+    "cpuModel": "Apple M3 Pro",
+    "cpuCount": "11",
+    "memoryBytes": 19327352832
+  },
+  "loadGenerator": {
+    "sharesHostWithService": true,
+    "driver": "scripts/failure_load.py"
+  },
+  "docker": {
+    "engine": "29.6.2",
+    "compose": "5.3.1"
+  },
+  "platform": {
+    "name": "compose",
+    "kubernetesServer": "n/a",
+    "nodeOsImage": "n/a",
+    "appReplicas": "1"
+  },
+  "repository": {
+    "commit": "3ae6c06d6ce098a51a9eb186b0df34c401188de3",
+    "uncommittedChanges": false
+  },
+  "parameters": {
+    "algorithm": "sliding-window",
+    "baseUrl": "http://localhost:8080",
+    "userCount": 5,
+    "tier": "PREMIUM",
+    "userLimit": 100,
+    "ratePerSecond": 20.0,
+    "baselineSeconds": 30.0,
+    "pauseSeconds": 40.0,
+    "recoverySeconds": 70.0,
+    "failureThreshold": 3,
+    "breakerTimeoutMs": 30000,
+    "authThrottlePerMinuteDuringRun": 10000
+  }
+}

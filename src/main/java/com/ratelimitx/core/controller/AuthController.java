@@ -7,6 +7,7 @@ import com.ratelimitx.core.entity.Role;
 import com.ratelimitx.core.entity.User;
 import com.ratelimitx.core.repository.UserRepository;
 import com.ratelimitx.core.security.JwtUtil;
+import com.ratelimitx.core.web.UserNotFoundException;
 import jakarta.validation.Valid;
 import java.util.HashMap;
 import java.util.Map;
@@ -140,7 +141,7 @@ public class AuthController {
         
         String username = authentication.getName();
         User user = userRepository.findByUsername(username)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new UserNotFoundException(username));
         
         Map<String, Object> response = new HashMap<>();
         response.put("username", user.getUsername());

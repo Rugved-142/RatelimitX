@@ -3,10 +3,14 @@ package com.ratelimitx.core.controller;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -21,10 +25,18 @@ import org.springframework.web.bind.annotation.RestController;
 import com.ratelimitx.core.circuitbreaker.CircuitBreaker;
 import com.ratelimitx.core.circuitbreaker.LocalRateLimiter;
 import com.ratelimitx.core.config.RateLimitConfig;
+import com.ratelimitx.core.dto.UpdateUserLimitRequest;
+import com.ratelimitx.core.entity.User;
 import com.ratelimitx.core.model.RateLimitResult;
+import com.ratelimitx.core.repository.UserRepository;
+import com.ratelimitx.core.service.RateLimitKeys;
+import com.ratelimitx.core.service.RateLimiterService;
 import com.ratelimitx.core.service.ResilientRateLimiter;
 import com.ratelimitx.core.service.SlidingWindowService;
 import com.ratelimitx.core.service.TokenBucketService;
+import com.ratelimitx.core.web.UserNotFoundException;
+
+import jakarta.validation.Valid;
 
 
 
@@ -45,7 +57,6 @@ public class AdminController {
     private SlidingWindowService slidingWindowService;
 
     @Autowired
-    @org.springframework.beans.factory.annotation.Qualifier("rateLimitConfig")
     private RateLimitConfig config;
 
     @Autowired
@@ -57,7 +68,45 @@ public class AdminController {
     @Autowired
     private ResilientRateLimiter resilientRateLimiter;
 
+    @Autowired
+    private RateLimiterService fixedWindowService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    /**
+     * Upper bound on keys returned by one administrative scan. SCAN is incremental, but an
+     * unbounded walk of a large keyspace still builds an unbounded result in memory.
+     */
+    @Value("${ratelimit.admin.scan-limit:10000}")
+    private int scanLimit;
+
+    /** Keys requested per SCAN round trip. A hint to Redis, not a guarantee. */
+    @Value("${ratelimit.admin.scan-batch:500}")
+    private int scanBatch;
+
     private static final long START_TIME = System.currentTimeMillis();
+
+    /**
+     * Walks the keyspace with SCAN instead of KEYS.
+     *
+     * <p>KEYS is O(N) over the entire keyspace and blocks the single-threaded Redis server for
+     * the whole walk, so on a production-sized keyspace it stalls every other client, including
+     * the rate limit checks on the request path. SCAN returns a cursor and yields between
+     * batches.
+     *
+     * @return at most {@code scanLimit} matching keys
+     */
+    private Set<String> scanKeys(String pattern) {
+        Set<String> keys = new LinkedHashSet<>();
+        ScanOptions options = ScanOptions.scanOptions().match(pattern).count(scanBatch).build();
+        try (Cursor<String> cursor = redis.scan(options)) {
+            while (cursor.hasNext() && keys.size() < scanLimit) {
+                keys.add(cursor.next());
+            }
+        }
+        return keys;
+    }
 
     // ==================== SYSTEM ENDPOINTS ====================
 
@@ -66,46 +115,29 @@ public class AdminController {
 
         Map<String, Object> stats = new HashMap<>();
 
-        // Count all rate limit keys across all algorithms
-        Set<String> rateLimitKeys = redis.keys("rate:*");
-        Set<String> bucketKeys = redis.keys("bucket:*");
-        Set<String> slidingKeys = redis.keys("sliding:*");
+        Set<String> rateLimitKeys = scanKeys(RateLimitKeys.FIXED_WINDOW_SCAN);
+        Set<String> bucketKeys = scanKeys(RateLimitKeys.BUCKET_SCAN);
+        Set<String> slidingKeys = scanKeys(RateLimitKeys.SLIDING_WINDOW_SCAN);
 
         Set<String> uniqueUsers = new HashSet<>();
-
-        // Extract users from fixed window keys
-        if (rateLimitKeys != null) {
-            for (String key : rateLimitKeys) {
-                String[] parts = key.split(":");
-                if (parts.length >= 2) {
-                    uniqueUsers.add(parts[1]);
-                }
-            }
+        for (String key : rateLimitKeys) {
+            addUser(uniqueUsers, key);
+        }
+        for (String key : bucketKeys) {
+            addUser(uniqueUsers, key);
+        }
+        for (String key : slidingKeys) {
+            addUser(uniqueUsers, key);
         }
 
-        // Extract users from bucket keys
-        if (bucketKeys != null) {
-            for (String key : bucketKeys) {
-                String[] parts = key.split(":");
-                if (parts.length >= 2) {
-                    uniqueUsers.add(parts[1]);
-                }
-            }
-        }
+        int totalKeys = rateLimitKeys.size() + bucketKeys.size() + slidingKeys.size();
 
-        // Extract users from sliding window keys
-        if (slidingKeys != null) {
-            for (String key : slidingKeys) {
-                String[] parts = key.split(":");
-                if (parts.length >= 2) {
-                    uniqueUsers.add(parts[1]);
-                }
-            }
-        }
-
-        int totalKeys = (rateLimitKeys != null ? rateLimitKeys.size() : 0)
-                + (bucketKeys != null ? bucketKeys.size() : 0)
-                + (slidingKeys != null ? slidingKeys.size() : 0);
+        // Say so rather than presenting a capped count as a complete one.
+        boolean truncated = rateLimitKeys.size() >= scanLimit
+                || bucketKeys.size() >= scanLimit
+                || slidingKeys.size() >= scanLimit;
+        stats.put("truncated", truncated);
+        stats.put("scanLimit", scanLimit);
 
         stats.put("activeUsers", uniqueUsers.size());
         stats.put("totalActiveKeys", totalKeys);
@@ -123,8 +155,11 @@ public class AdminController {
         return stats;
     }
 
+    /**
+     * Operational health of the rate limiter's Redis dependency. ADMIN only, like the rest of
+     * {@code /admin/**}: it reports internal state and writes a probe key to Redis.
+     */
     @GetMapping("/health")
-    @PreAuthorize("permitAll()")
     public Map<String, Object> health() {
         Map<String, Object> health = new HashMap<>();
 
@@ -141,29 +176,67 @@ public class AdminController {
         return health;
     }
 
+    /**
+     * Records the user a key belongs to, skipping the auth throttle's keys: those are keyed by
+     * client IP, so counting them would inflate the active user total with addresses.
+     */
+    private void addUser(Set<String> users, String key) {
+        String userId = RateLimitKeys.userIdOf(key);
+        if (userId != null && !userId.startsWith(RateLimitKeys.AUTH_THROTTLE_PREFIX)) {
+            users.add(userId);
+        }
+    }
+
+    // ==================== ALGORITHM SELECTION ====================
+
+    /** Reports the algorithm currently deciding requests and the names accepted by POST. */
+    @GetMapping("/algorithm")
+    public Map<String, Object> getAlgorithm() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("algorithm", config.getAlgorithm());
+        response.put("currentMode", resilientRateLimiter.getCurrentMode());
+        response.put("supported", RateLimitConfig.sortedNames());
+        return response;
+    }
+
+    /**
+     * Switches the active algorithm without a restart.
+     *
+     * <p>An unknown name is rejected with 400 and changes nothing. Existing Redis state is left
+     * alone: each algorithm uses its own keys, so a switch does not reset anyone's counters, and
+     * switching back resumes from where that algorithm left off. Requests already in flight
+     * finish under the algorithm they started with.
+     */
+    @PostMapping("/algorithm")
+    public Map<String, Object> setAlgorithm(@RequestBody Map<String, Object> request) {
+        Object requested = request.get("algorithm");
+        String name = requested == null ? null : String.valueOf(requested);
+
+        String previous = config.setAlgorithmChecked(name);
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "success");
+        response.put("previousAlgorithm", previous);
+        response.put("algorithm", config.getAlgorithm());
+        return response;
+    }
+
     // ==================== FIXED WINDOW ENDPOINTS ====================
 
     @GetMapping("/user/{userId}")
     public Map<String, Object> getUserStatus(@PathVariable String userId) {
         Map<String, Object> status = new HashMap<>();
 
-        long currentMinute = System.currentTimeMillis() / 60000;
-        String key = "rate:" + userId + ":" + currentMinute;
-
-        String count = redis.opsForValue().get(key);
-        int currentCount = count != null ? Integer.parseInt(count) : 0;
-
+        int currentCount = fixedWindowService.currentCount(userId);
         int maxRequests = getUserLimit(userId);
+        long resetMillis = fixedWindowService.millisUntilReset();
 
         status.put("userId", userId);
         status.put("algorithm", "fixed-window");
         status.put("currentRequests", currentCount);
         status.put("maxRequests", maxRequests);
         status.put("remainingRequests", Math.max(0, maxRequests - currentCount));
-
-        int secondsIntoMinute = (int) ((System.currentTimeMillis() / 1000) % 60);
-        status.put("resetsInSeconds", 60 - secondsIntoMinute);
-
+        status.put("resetInMs", resetMillis);
         status.put("isRateLimited", currentCount >= maxRequests);
 
         return status;
@@ -173,7 +246,7 @@ public class AdminController {
 
     @GetMapping("/bucket/{userId}")
     public Map<String, Object> getBucketStatus(@PathVariable String userId) {
-        RateLimitResult result = tokenBucketService.getBucketStatus(userId);
+        RateLimitResult result = tokenBucketService.getBucketStatus(userId, getUserLimit(userId));
 
         Map<String, Object> status = new HashMap<>();
         status.put("userId", userId);
@@ -189,7 +262,8 @@ public class AdminController {
 
     @GetMapping("/sliding/{userId}")
     public Map<String, Object> getSlidingWindowStatus(@PathVariable String userId) {
-        RateLimitResult result = slidingWindowService.getStatus(userId);
+        RateLimitResult result = slidingWindowService.getStatus(
+                userId, getUserLimit(userId), config.getWindowSizeSeconds());
 
         Map<String, Object> status = new HashMap<>();
         status.put("userId", userId);
@@ -211,10 +285,7 @@ public class AdminController {
 
         // Fixed Window Status
         Map<String, Object> fixedWindow = new HashMap<>();
-        long currentMinute = System.currentTimeMillis() / 60000;
-        String key = "rate:" + userId + ":" + currentMinute;
-        String count = redis.opsForValue().get(key);
-        int currentCount = count != null ? Integer.parseInt(count) : 0;
+        int currentCount = fixedWindowService.currentCount(userId);
         int maxRequests = getUserLimit(userId);
         fixedWindow.put("currentRequests", currentCount);
         fixedWindow.put("maxRequests", maxRequests);
@@ -222,7 +293,7 @@ public class AdminController {
         comparison.put("fixedWindow", fixedWindow);
 
         // Token Bucket Status
-        RateLimitResult bucketResult = tokenBucketService.getBucketStatus(userId);
+        RateLimitResult bucketResult = tokenBucketService.getBucketStatus(userId, maxRequests);
         Map<String, Object> tokenBucket = new HashMap<>();
         tokenBucket.put("tokensRemaining", bucketResult.getRemaining());
         tokenBucket.put("bucketCapacity", bucketResult.getLimit());
@@ -230,7 +301,8 @@ public class AdminController {
         comparison.put("tokenBucket", tokenBucket);
 
         // Sliding Window Status
-        RateLimitResult slidingResult = slidingWindowService.getStatus(userId);
+        RateLimitResult slidingResult = slidingWindowService.getStatus(
+                userId, maxRequests, config.getWindowSizeSeconds());
         Map<String, Object> slidingWindow = new HashMap<>();
         slidingWindow.put("currentCount", slidingResult.getLimit() - slidingResult.getRemaining());
         slidingWindow.put("maxRequests", slidingResult.getLimit());
@@ -245,43 +317,58 @@ public class AdminController {
 
     // ==================== USER MANAGEMENT ENDPOINTS ====================
 
+    /**
+     * Sets the rate limit, and optionally the role, that will actually be enforced for a user.
+     *
+     * <p>This used to write the value into a Redis hash called {@code user-limits}. Nothing on the
+     * request path ever read that hash: the limit applied to {@code /api/data} comes from the
+     * authenticated principal, which is loaded from the users table. So the endpoint reported
+     * success, the admin views below echoed the new number back, and the limit the caller actually
+     * received never changed. It now updates the user row, which is the value the limiter uses.
+     */
     @PostMapping("/limit")
-    public Map<String, Object> setUserLimit(@RequestBody Map<String, Object> request) {
-        String userId = (String) request.get("userId");
-        Integer limit = (Integer) request.get("limit");
+    public Map<String, Object> setUserLimit(@Valid @RequestBody UpdateUserLimitRequest request) {
+        User user = userRepository.findByUsername(request.getUsername())
+                .orElseThrow(() -> new UserNotFoundException(request.getUsername()));
 
-        redis.opsForHash().put("user-limits", userId, String.valueOf(limit));
+        if (request.getRole() != null) {
+            user.setRole(request.getRole());
+            // Without an explicit limit, move the user onto their new tier's default.
+            if (request.getRateLimit() == null) {
+                user.setRateLimit(request.getRole().getDefaultRateLimit());
+            }
+        }
+        if (request.getRateLimit() != null) {
+            user.setRateLimit(request.getRateLimit());
+        }
+
+        userRepository.save(user);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "success");
-        response.put("userId", userId);
-        response.put("newLimit", limit);
+        response.put("username", user.getUsername());
+        response.put("role", user.getRole().name());
+        response.put("rateLimit", user.getRateLimit());
+        // An existing token still carries the old claims; the limiter reads the user row on each
+        // request, so the new limit applies immediately regardless.
+        response.put("note", "Applies to the next request; existing tokens remain valid.");
         return response;
     }
 
     @DeleteMapping("/reset/{userId}")
     public Map<String, Object> resetUser(@PathVariable String userId) {
 
-        // Reset Fixed Window keys
-        Set<String> fixedWindowKeys = redis.keys("rate:" + userId + ":*");
-        if (fixedWindowKeys != null && !fixedWindowKeys.isEmpty()) {
-            redis.delete(fixedWindowKeys);
-        }
+        Set<String> keys = new LinkedHashSet<>();
+        keys.addAll(scanKeys(RateLimitKeys.fixedWindowPattern(userId)));
+        keys.addAll(scanKeys(RateLimitKeys.slidingWindowPattern(userId)));
+        keys.add(RateLimitKeys.bucket(userId));
 
-        // Reset Token Bucket keys
-        Set<String> bucketKeys = redis.keys("bucket:" + userId);
-        if (bucketKeys != null && !bucketKeys.isEmpty()) {
-            redis.delete(bucketKeys);
-        }
-
-        // Reset Sliding Window keys
-        Set<String> slidingKeys = redis.keys("sliding:" + userId + ":*");
-        if (slidingKeys != null && !slidingKeys.isEmpty()) {
-            redis.delete(slidingKeys);
-        }
+        long deleted = keys.isEmpty() ? 0 : redis.delete(keys);
 
         Map<String, Object> response = new HashMap<>();
         response.put("status", "success");
+        response.put("userId", userId);
+        response.put("keysDeleted", deleted);
         response.put("message", "Reset user: " + userId + " (all algorithms)");
         return response;
     }
@@ -308,8 +395,16 @@ public class AdminController {
 
     // ==================== HELPER METHODS ====================
 
+    /**
+     * The limit that would actually be enforced for a user, read from the same place the request
+     * path reads it. The admin views below must not report a different number from the one the
+     * limiter applies.
+     */
     private int getUserLimit(String userId) {
-        String customLimit = (String) redis.opsForHash().get("user-limits", userId);
-        return customLimit != null ? Integer.parseInt(customLimit) : 10;
+        return userRepository.findByUsername(userId)
+                .map(user -> user.getRateLimit() != null
+                        ? user.getRateLimit()
+                        : user.getRole().getDefaultRateLimit())
+                .orElseThrow(() -> new UserNotFoundException(userId));
     }
 }

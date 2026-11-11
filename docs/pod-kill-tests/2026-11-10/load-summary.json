@@ -1,0 +1,14 @@
+{
+  "startedAtMs": 1794344379001,
+  "finishedAtMs": 1794344458965,
+  "requestedRatePerSecond": 20.0,
+  "durationSeconds": 80.0,
+  "pollIntervalMs": 100,
+  "circuitBaseUrl": null,
+  "users": [
+    "podkill1"
+  ],
+  "submitted": 1600,
+  "notSubmitted": 0,
+  "recorded": 1600
+}

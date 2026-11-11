@@ -1,0 +1,25 @@
+# kind cluster used by scripts/kind-up.sh.
+#
+# One node. Two application replicas on a single node still exercise what this phase is about -
+# rolling updates, pod deletion, a Service load-balancing across endpoints, per-instance fallback
+# state - and a multi-node kind cluster costs several more containers for no extra coverage of
+# any of that. What it deliberately does not test is a node failure.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: ratelimitx
+nodes:
+  - role: control-plane
+    # The node image is pinned by digest. A tag can be republished against different code, and
+    # the version of Kubernetes a test ran on is part of what the test means.
+    image: kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5
+    extraPortMappings:
+      # Host 18080 reaches the NodePort Service, so load is spread across both replicas by
+      # kube-proxy. `kubectl port-forward` would not do: it forwards to a single pod, which would
+      # quietly turn a two-replica test into a one-replica test.
+      #
+      # 18080 rather than 8080 because docker-compose.yml already binds 8080 on this machine, and
+      # a developer may well have both up at once.
+      - containerPort: 30080
+        hostPort: 18080
+        listenAddress: "127.0.0.1"
+        protocol: TCP

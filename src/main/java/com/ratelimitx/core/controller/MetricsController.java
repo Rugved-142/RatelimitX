@@ -3,6 +3,7 @@ package com.ratelimitx.core.controller;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,9 +15,16 @@ import com.ratelimitx.core.service.MetricsService;
 
 
 
+/**
+ * Reads the legacy Redis-backed counters.
+ *
+ * <p>Registered only when {@code metrics.legacy.enabled=true}, since it has nothing to read
+ * otherwise. These paths return 404 by default; Prometheus metrics are unaffected.
+ */
 @RestController
 @RequestMapping("/metrics")
 @CrossOrigin(origins="*")
+@ConditionalOnProperty(name = "metrics.legacy.enabled", havingValue = "true")
 public class MetricsController {
 
     @Autowired

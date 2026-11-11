@@ -1,0 +1,27 @@
+# Local access only.
+#
+# This exists so a test on the developer's machine can drive the Service through kube-proxy and
+# actually reach both replicas. `kubectl port-forward` forwards to one pod, which would turn a
+# two-replica test into a one-replica test without saying so.
+#
+# A real deployment would not have this: the API would sit behind an Ingress or a LoadBalancer
+# with TLS in front of the ClusterIP Service in 30-app.yaml. Only port 8080 is here; actuator is
+# not published outside the cluster.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratelimitx-nodeport
+  namespace: ratelimitx
+  labels:
+    app.kubernetes.io/name: ratelimitx
+    app.kubernetes.io/component: local-access
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: ratelimitx
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      # Mapped to host 127.0.0.1:18080 by k8s/kind-cluster.yaml.
+      nodePort: 30080

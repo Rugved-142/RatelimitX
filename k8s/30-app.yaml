@@ -1,0 +1,208 @@
+# The application: two replicas behind a Service.
+#
+# Two replicas is the point of this manifest. It is what makes the rolling update, the pod-kill
+# test and - importantly - the per-instance nature of the local fallback observable. See
+# docs/kubernetes.md for what was measured on it.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ratelimitx
+  namespace: ratelimitx
+  labels:
+    app.kubernetes.io/name: ratelimitx
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ratelimitx
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Never drop below the current replica count during an update: bring the new pod up, wait
+      # for it to pass its readiness probe, then take an old one away.
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ratelimitx
+    spec:
+      # 20s of graceful shutdown (see application.properties) plus the preStop wait below, with
+      # room to spare before the kubelet escalates to SIGKILL.
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001        # the app user created in the Dockerfile
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          # Preferred, not required: on the single-node kind cluster a required rule would leave
+          # the second replica permanently Pending. On a real cluster this spreads them.
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: ratelimitx
+      initContainers:
+        # Mirrors docker-compose.yml's depends_on: service_healthy. Without this the application
+        # starts, fails to reach Postgres, exits, and spends the first minute in CrashLoopBackOff
+        # before succeeding - which works, but makes every real startup problem look the same as
+        # a dependency that was merely slow.
+        #
+        # Both use images the cluster already needs, so neither adds a pull.
+        - name: wait-for-postgres
+          image: postgres:16-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              until pg_isready -h postgres -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do
+                echo "waiting for postgres"; sleep 2
+              done
+          envFrom:
+            - configMapRef:
+                name: ratelimitx-config
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+        - name: wait-for-redis
+          image: redis:7-alpine
+          command: ["sh", "-c"]
+          args:
+            - |
+              until redis-cli -h redis -p 6379 ping; do
+                echo "waiting for redis"; sleep 2
+              done
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+      containers:
+        - name: app
+          image: ratelimitx:local
+          # The image is built locally and loaded into the cluster with `kind load`, so there is
+          # no registry to pull it from. Never would be wrong too: it has to be allowed to pull
+          # on a real cluster.
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9091
+          envFrom:
+            - configMapRef:
+                name: ratelimitx-config
+          env:
+            # The application refuses to start without this, and will not accept one shorter than
+            # 32 bytes. scripts/kind-up.sh generates it; it is never committed.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: ratelimitx-secrets
+                  key: JWT_SECRET
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ratelimitx-secrets
+                  key: POSTGRES_PASSWORD
+          # Both probes hit the management port, which no Service exposes to the outside.
+          #
+          # They use the liveness and readiness *groups*, not /actuator/health. That matters: the
+          # full health endpoint includes the Redis indicator, so using it would take every pod
+          # out of the Service the moment Redis went down - turning a degradation the circuit
+          # breaker is designed to absorb into a total outage. The groups contain only the
+          # application's own liveness and readiness state. A pod serving correct answers from
+          # the local fallback is ready, and that is the intended behaviour.
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 5
+            failureThreshold: 30        # up to 150s for a cold JVM
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: management
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          lifecycle:
+            preStop:
+              exec:
+                # Removal from the Service's endpoints and the SIGTERM race each other. Without
+                # this pause the pod can stop accepting connections before kube-proxy has
+                # stopped sending it any, which shows up as connection errors during a rollout.
+                command: ["sleep", "5"]
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              # The JVM sizes its heap from the container limit, so this is also the heap
+              # setting. No -Xmx is passed; MaxRAMPercentage defaults to 25%, giving ~256MB.
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # The JVM needs a writable /tmp; nothing else in the image is written to, which is
+            # what lets the root filesystem be read-only.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ratelimitx
+  namespace: ratelimitx
+  labels:
+    app.kubernetes.io/name: ratelimitx
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ratelimitx
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+    # Exposed in-cluster for a Prometheus that scrapes it. Deliberately absent from the NodePort
+    # Service: actuator is not published outside the cluster.
+    - name: management
+      port: 9091
+      targetPort: management
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ratelimitx
+  namespace: ratelimitx
+spec:
+  # A voluntary disruption - a drain, an eviction - may never take both replicas at once.
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ratelimitx

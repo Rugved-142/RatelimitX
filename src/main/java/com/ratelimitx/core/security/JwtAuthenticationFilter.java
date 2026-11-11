@@ -6,7 +6,6 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import jakarta.servlet.FilterChain;
@@ -17,7 +16,17 @@ import jakarta.servlet.http.HttpServletResponse;
 
 
 
-@Component
+/**
+ * Authenticates a request from its {@code Authorization: Bearer} token.
+ *
+ * <p>Registered explicitly in {@link SecurityConfig}. It is intentionally not a
+ * {@code @Component}: Boot auto-registers every {@code Filter} bean as a plain servlet filter,
+ * which would run this outside the Spring Security chain as well as inside it.
+ *
+ * <p>A token that is missing, malformed, forged or expired leaves the security context empty, so
+ * the request continues unauthenticated and the chain rejects it with 401. Nothing here writes a
+ * response itself.
+ */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
     
     private final JwtUtil jwtUtil;
@@ -65,7 +74,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 }
             }
         } catch (Exception e) {
-            logger.error("Cannot set user authentication: " + e.getMessage());
+            // An unusable token is a client error, not a server error: leave the context empty
+            // and let the chain return 401.
+            // OncePerRequestFilter.logger is commons-logging, which has no {} placeholders.
+            logger.debug("Rejected JWT: " + e.getMessage());
         }
         
         filterChain.doFilter(request, response);

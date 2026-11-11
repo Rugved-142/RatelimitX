@@ -6,9 +6,10 @@ NC='\033[0m'
 
 BASE_URL="http://localhost:8080"
 
-# Check if app is running
+# Check if app is running. /admin/health now requires the ADMIN role and actuator is served on
+# the unpublished management port, so probe the container's own health instead.
 echo -e "${BLUE}Checking if RateLimitX is running...${NC}"
-if ! curl -s "$BASE_URL/admin/health" > /dev/null 2>&1; then
+if ! docker exec ratelimitx-app curl -fsS http://localhost:9091/actuator/health > /dev/null 2>&1; then
     echo -e "${RED}Error: RateLimitX is not running!${NC}"
     echo "Start it with: docker-compose up -d"
     exit 1

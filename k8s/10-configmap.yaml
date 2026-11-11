@@ -1,0 +1,25 @@
+# Non-secret configuration only. Everything secret - the JWT signing key and the database
+# password - is in a Secret that scripts/kind-up.sh generates and that is never committed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ratelimitx-config
+  namespace: ratelimitx
+  labels:
+    app.kubernetes.io/name: ratelimitx
+data:
+  # Service DNS names inside the namespace.
+  SPRING_DATA_REDIS_HOST: "redis"
+  SPRING_DATA_REDIS_PORT: "6379"
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres:5432/ratelimitx"
+  SPRING_DATASOURCE_USERNAME: "ratelimitx"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "update"
+
+  POSTGRES_DB: "ratelimitx"
+  POSTGRES_USER: "ratelimitx"
+
+  # Per-IP caps on the unauthenticated auth endpoints. These are the production defaults, the
+  # same as docker-compose.yml. A test that needs to provision many users raises them for the run
+  # and puts them back; nothing else should change them.
+  RATELIMIT_AUTH_LOGIN_LIMIT_PER_MINUTE: "5"
+  RATELIMIT_AUTH_REGISTER_LIMIT_PER_MINUTE: "5"

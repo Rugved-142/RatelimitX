@@ -1,255 +1,248 @@
-# RateLimitX Prometheus + Grafana Monitoring Setup
+# Monitoring Setup: Prometheus and Grafana
 
 ## Overview
-Complete Prometheus + Grafana monitoring stack has been integrated into your RateLimitX Spring Boot 3.x application.
 
-## What Was Added
+RateLimitX exposes application metrics through Spring Boot Actuator and Micrometer. A
+Prometheus instance scrapes them and a Grafana instance, provisioned on startup, renders the
+bundled dashboard. Both run as Docker Compose services alongside the application.
 
-### 1. **Dependencies (pom.xml)**
-- `spring-boot-starter-actuator` - Spring Boot actuator for metrics endpoints
-- `micrometer-registry-prometheus` - Prometheus metrics registry
+## Components
 
-### 2. **Application Configuration (application.properties)**
+### Dependencies (pom.xml)
+
+- `spring-boot-starter-actuator` — actuator endpoints, including `/actuator/prometheus`
+- `micrometer-registry-prometheus` — Prometheus registry for Micrometer
+
+### Application configuration (application.properties)
+
 ```properties
-# Actuator endpoints exposure
-management.endpoints.web.exposure.include=health,info,metrics,prometheus
+management.server.port=9091
+management.endpoints.web.exposure.include=health,info,prometheus
 management.endpoint.health.show-details=always
+management.endpoint.health.probes.enabled=true
 management.metrics.tags.application=ratelimitx
+management.metrics.distribution.percentiles-histogram.http.server.requests=true
 management.prometheus.metrics.export.enabled=true
 ```
 
-### 3. **Java Configuration Classes**
+Actuator is served on port 9091, not on the application's port 8080. Docker Compose does not
+publish 9091, so these endpoints are reachable only from inside the Compose network — which is
+all Prometheus and the container healthcheck need. Nothing under `/actuator` is mapped on port
+8080, so a request there returns 404.
 
-#### MetricsConfig.java
-- Configures Micrometer/Prometheus metrics
-- Registers custom counters and timers
-- Enables @Timed annotation support
+The alternative was to keep actuator on 8080 and require the ADMIN role. That would force
+Prometheus to authenticate, and one wrong request matcher would publish health details or
+`/actuator/env`. A port that is never published cannot be reached from outside the network no
+matter how the authorization rules are written. The trade-off is that health is no longer a
+plain `curl` from the host; use `docker compose ps` or `docker exec`.
 
-#### PrometheusMetricsService.java
-- Service layer for recording metrics
-- Methods:
-  - `recordRequest(userId, allowed, algorithm)` - Record API requests
-  - `recordDenied(userId)` - Record denied requests
-  - `recordCheckDuration(duration, algorithm, allowed)` - Record check timing
-  - `setCircuitBreakerState(state)` - Update circuit breaker status
-  - `setActiveUsers(count)` - Update active user count
+### Java classes
 
-### 4. **Updated Controllers & Security**
+#### `config/MetricsConfig.java`
+Configures the Micrometer registry and registers the custom counters, timers and gauges.
 
-#### ApiController.java
-- Injected `PrometheusMetricsService`
-- Records every request with:
-  - User ID
-  - Success/failure status
-  - Algorithm used
-  - Response time
+#### `service/PrometheusMetricsService.java`
+Records metrics from the request path:
 
-#### SecurityConfig.java
-- Allows unauthenticated access to:
-  - `/actuator/health`
-  - `/actuator/prometheus`
-  - `/actuator/info`
-  - `/actuator/**`
+| Method | Records |
+|--------|---------|
+| `recordRequest(userId, allowed, algorithm)` | One rate limit decision |
+| `recordDenied(userId)` | A denied request |
+| `recordCheckDuration(duration, algorithm, allowed)` | Rate limit check timing |
 
-### 5. **Monitoring Infrastructure**
+The `recordRequest` and `recordDenied` signatures take the algorithm rather than a user id: see
+[Metrics](#metrics) below.
 
-#### prometheus/prometheus.yml
-- Scrape interval: 10-15 seconds
-- Target: `http://app:8080/actuator/prometheus`
-- Storage retention: 15 days
+The dead `setCircuitBreakerState` and `setActiveUsers` methods are gone. Nothing ever called
+them, so `app_circuitbreaker_state` only ever reported `CLOSED`. The gauge is now registered by
+`CircuitBreakerMetrics` and reads `CircuitBreaker.getState()` on every scrape, so there is no
+second copy of the state to drift out of date.
 
-#### grafana/provisioning/datasources/datasource.yml
-- Auto-provisions Prometheus as default datasource
-- No manual configuration needed
+#### `controller/ApiController.java`
+Calls `PrometheusMetricsService` for every rate limit decision with the user id, the
+allow/deny outcome, the algorithm in use and the elapsed time.
 
-#### grafana/provisioning/dashboards/dashboard.yml
-- Auto-loads `ratelimitx-dashboard.json`
-- Refreshes every 30 seconds
+#### `security/SecurityConfig.java`
+`/actuator/**` is permitted without authentication so Prometheus can scrape it, but because
+actuator is bound to the unpublished management port this grants nothing to a caller outside the
+Compose network.
 
-#### grafana/dashboards/ratelimitx-dashboard.json
-Comprehensive dashboard with panels:
+### Infrastructure
 
-**Row 1: Overview**
-- Requests (Allowed vs Denied pie chart)
-- Success Rate % (gauge)
+#### `prometheus/prometheus.yml`
+- Global scrape interval: 15s; the `ratelimitx` job scrapes every 10s with a 5s timeout
+- Target: `app:9091/actuator/prometheus` (the management port)
+- Retention: 15 days (set by `--storage.tsdb.retention.time` in Compose)
 
-**Row 2: Performance**
-- Requests Per Second (time series)
-- Request Latency p50/p95/p99 (time series)
+#### `grafana/provisioning/datasources/datasource.yml`
+Provisions Prometheus as the default datasource. No manual setup is needed.
 
-**Row 3: Rate Limiting**
-- Denied Requests by User (bar chart)
-- Algorithm Usage (pie chart)
-- Circuit Breaker State (stat)
+#### `grafana/provisioning/dashboards/dashboard.yml`
+Loads dashboards from `/var/lib/grafana/dashboards`, which is where
+`grafana/dashboards/` is mounted.
 
-**Row 4: JVM Metrics**
-- JVM Memory Usage (heap used vs max)
-- JVM CPU Usage (percentage)
-- Active Threads (current vs peak)
+#### `grafana/dashboards/ratelimitx-dashboard.json`
+Panels:
 
-### 6. **Docker Compose Updates**
+**Overview** — allowed vs denied requests, success rate gauge
+**Performance** — requests per second, p50/p95/p99 rate limit check latency
+**Rate limiting** — denied requests by algorithm, algorithm usage, circuit breaker state
+**JVM** — heap used vs max, process CPU usage, current vs peak threads
 
-Added three new services:
+### Compose services
 
-#### Prometheus Service
-- Image: `prom/prometheus:v2.47.0`
-- Port: `9090`
-- Volumes: configuration and persistent data storage
+| Service | Image | Port |
+|---------|-------|------|
+| prometheus | `prom/prometheus:v2.47.0` | 9090 |
+| grafana | `grafana/grafana:10.1.0` | 3000 |
 
-#### Grafana Service
-- Image: `grafana/grafana:10.1.0`
-- Port: `3000`
-- Admin credentials: `admin/admin`
-- Auto-provisions datasources and dashboards
+Grafana's admin credentials come from `GRAFANA_ADMIN_USER` and `GRAFANA_ADMIN_PASSWORD` in
+`.env`. There is no `admin`/`admin` fallback: Compose refuses to start if either is unset.
 
-#### Volumes
-- `prometheus-data` - Prometheus time-series database
-- `grafana-data` - Grafana configuration and plugins
+All four supporting services publish their host ports on `127.0.0.1` only.
 
-## Quick Start
+Volumes: `prometheus-data` holds the time-series database, `grafana-data` holds Grafana's
+own state.
 
-### 1. Build the Application
+## Running the stack
+
 ```bash
-mvn clean package
+cp .env.example .env
 ```
 
-### 2. Start All Services
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
-### 3. Access Services
+Endpoints once the stack is up:
 
-- **RateLimitX API**: http://localhost:8080
-  - Endpoints: `/auth/**`, `/api/data`, `/api/status`
-  
-- **Prometheus**: http://localhost:9090
-  - Query interface for Prometheus metrics
-  - Status page: http://localhost:9090/graph
-  
-- **Grafana**: http://localhost:3000
-  - Login: `admin` / `admin`
-  - RateLimitX Dashboard automatically loaded
-  - Update admin password on first login
+- Application: http://localhost:8080 (`/auth/**`, `/api/data`, `/api/status`)
+- Prometheus: http://127.0.0.1:9090
+- Grafana: http://127.0.0.1:3000 (dashboard is provisioned automatically)
+- Actuator: port 9091 inside the container only
 
-### 4. Generate Test Traffic
+## Generating traffic
+
 ```bash
-# Use the load test script to generate metrics
-./run-load-test.sh
+curl -X POST http://localhost:8080/auth/register -H "Content-Type: application/json" -d '{"username":"testuser","email":"test@example.com","password":"password123"}'
 ```
 
-Or manually:
 ```bash
-# Register a user
-curl -X POST http://localhost:8080/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"testuser","password":"password123"}'
-
-# Login
-curl -X POST http://localhost:8080/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"testuser","password":"password123"}'
-
-# Use the token to make requests
-TOKEN="<jwt_token_from_login>"
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/data
-
-# View metrics endpoint
-curl http://localhost:8080/actuator/prometheus
+TOKEN=$(curl -s -X POST http://localhost:8080/auth/login -H "Content-Type: application/json" -d '{"username":"testuser","password":"password123"}' | jq -r '.token')
 ```
 
-## Available Metrics
+```bash
+for i in $(seq 1 15); do curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/api/data -H "Authorization: Bearer $TOKEN"; done
+```
 
-### Custom Rate Limiting Metrics
-- `ratelimit.requests.total` - Total requests (tagged: user_id, allowed, algorithm)
-- `ratelimit.requests.denied` - Denied requests (tagged: user_id)
-- `ratelimit.check.duration` - Check duration in milliseconds (tagged: algorithm, result)
-- `app.active.users` - Gauge for active user count
-- `app.circuitbreaker.state` - Circuit breaker state (0=CLOSED, 1=HALF_OPEN, 2=OPEN)
+```bash
+docker exec ratelimitx-app curl -s http://localhost:9091/actuator/prometheus | grep ratelimit
+```
 
-### JVM Metrics (Auto-collected)
-- `jvm.memory.used` - Heap and non-heap memory usage
-- `jvm.memory.max` - Maximum heap size
-- `jvm_threads_current` - Currently active threads
-- `jvm_threads_peak` - Peak thread count
-- `process_cpu_usage` - CPU usage percentage
-- `http.server.requests` - HTTP request metrics (timing, count, status)
+## Metrics
 
-## Prometheus Queries
+### Rate limiting metrics
 
-Common useful queries for the dashboard:
+| Metric | Tags | Description |
+|--------|------|-------------|
+| `ratelimit.requests.total` | `allowed`, `algorithm` | Rate limit decisions |
+| `ratelimit.requests.denied` | `algorithm` | Denied requests |
+| `ratelimit.check.duration` | `algorithm`, `result` | Rate limit check duration |
+| `app.circuitbreaker.state` | - | 0 CLOSED, 1 HALF_OPEN, 2 OPEN, read live from the breaker |
+
+Every tag has a small fixed set of values, so the number of time series is bounded regardless of
+how many users the service has. The `user_id` tag these metrics used to carry created one series
+per user and grew without bound; per-user figures come from `/metrics/user/{userId}` instead.
+
+Each meter is registered once and reused. The previous code registered the same meter name both
+with tags and without, which produced two separate series and made `sum()` over the metric count
+every request twice.
+
+### JVM and HTTP metrics (collected by Micrometer)
+
+- `jvm.memory.used`, `jvm.memory.max`
+- `jvm_threads_current`, `jvm_threads_peak`
+- `process_cpu_usage`
+- `http.server.requests`
+
+## Example PromQL queries
 
 ```promql
-# Requests per second
+# Decisions per second
 rate(ratelimit_requests_total[1m])
 
-# Error rate
+# Denial ratio
 rate(ratelimit_requests_denied[5m]) / rate(ratelimit_requests_total[5m])
 
-# 95th percentile latency
+# p95 rate limit check latency
 histogram_quantile(0.95, rate(ratelimit_check_duration_bucket[5m]))
 
-# Request distribution by algorithm
+# Decisions by algorithm
 sum by (algorithm) (rate(ratelimit_requests_total[5m]))
 
-# Circuit breaker state
-app_circuitbreaker_state
+# Decisions by outcome
+sum by (allowed) (rate(ratelimit_requests_total[5m]))
 ```
 
-## Health Checks
-
-Verify the monitoring stack:
+## Verifying the stack
 
 ```bash
-# Check Prometheus is scraping metrics
 curl http://localhost:9090/api/v1/targets
+```
 
-# Check Grafana is running
+```bash
 curl http://localhost:3000/api/health
+```
 
-# Check application metrics endpoint
-curl http://localhost:8080/actuator/prometheus
+```bash
+docker exec ratelimitx-app curl -fsS http://localhost:9091/actuator/prometheus | head
 ```
 
 ## Troubleshooting
 
-### Metrics Not Appearing in Grafana
-1. Check Prometheus targets: http://localhost:9090/graph
-2. Verify app is running: `curl http://localhost:8080/actuator/health`
-3. Check Prometheus logs: `docker logs ratelimitx-prometheus`
+### Metrics missing in Grafana
+1. Check the Prometheus target list at http://127.0.0.1:9090/targets; the `ratelimitx` job should
+   be scraping `http://app:9091/actuator/prometheus`
+2. Confirm the application responds: `docker exec ratelimitx-app curl -fsS http://localhost:9091/actuator/health`
+3. Read the Prometheus logs: `docker logs ratelimitx-prometheus`
 
-### Grafana Dashboard Not Loading
-1. Verify datasource connection: Grafana → Configuration → Data Sources
-2. Check Prometheus is accessible from Grafana container
-3. Reload dashboard: Press F5 or click the refresh icon
+### Dashboard not loading
+1. Check the datasource under Grafana → Connections → Data sources
+2. Confirm Grafana can reach Prometheus over the Compose network
+3. Read the Grafana logs: `docker logs ratelimitx-grafana`
 
-### Can't Access Grafana
-1. Default login: `admin/admin`
-2. Check port 3000 is not in use: `lsof -i :3000`
-3. View logs: `docker logs ratelimitx-grafana`
+### Grafana unreachable
+1. Grafana is bound to `127.0.0.1:3000`; it is not reachable from another machine by design
+2. Check that port 3000 is free: `lsof -i :3000`
+3. Read the Grafana logs: `docker logs ratelimitx-grafana`
 
-## Configuration Files
+### Grafana rejects the password
+The credentials come from `.env`, not `admin`/`admin`. Changing `GRAFANA_ADMIN_PASSWORD` after
+the first start has no effect, because Grafana stores the admin user in `grafana-data`; reset it
+with `docker exec ratelimitx-grafana grafana-cli admin reset-admin-password <new>`.
 
-- **Application Config**: `src/main/resources/application.properties`
-- **Prometheus Config**: `prometheus/prometheus.yml`
-- **Grafana Datasource**: `grafana/provisioning/datasources/datasource.yml`
-- **Dashboard Config**: `grafana/provisioning/dashboards/dashboard.yml`
-- **Dashboard JSON**: `grafana/dashboards/ratelimitx-dashboard.json`
-- **Docker Compose**: `docker-compose.yml`
+## Configuration files
 
-## Next Steps
+| Purpose | Path |
+|---------|------|
+| Application config | `src/main/resources/application.properties` |
+| Prometheus config | `prometheus/prometheus.yml` |
+| Grafana datasource | `grafana/provisioning/datasources/datasource.yml` |
+| Grafana dashboard provisioning | `grafana/provisioning/dashboards/dashboard.yml` |
+| Dashboard definition | `grafana/dashboards/ratelimitx-dashboard.json` |
+| Compose stack | `docker-compose.yml` |
 
-1. **Fine-tune Grafana dashboard** - Customize panels based on your needs
-2. **Add alerting rules** - Set up Prometheus alert rules for critical metrics
-3. **Configure Grafana notifications** - Send alerts to Slack, PagerDuty, etc.
-4. **Add Redis exporter** - Monitor Redis operations (optional)
-5. **Add PostgreSQL exporter** - Monitor database performance (optional)
-6. **Backup Prometheus data** - Set up automated backups of TSDB
+## Known gaps
 
-## Support
+- No Prometheus alert rules are defined.
+- The legacy Redis-backed counters behind `/metrics/**` are disabled by default
+  (`metrics.legacy.enabled=false`); the dashboard does not use them.
+- `management.endpoint.health.show-details=always` is safe only because the management port is
+  unpublished. Publishing port 9091 would expose full health details without authentication.
 
-For issues or improvements, check:
-- Prometheus documentation: https://prometheus.io/docs/
-- Grafana documentation: https://grafana.com/docs/
-- Spring Boot Actuator: https://spring.io/guides/gs/actuator-service/
+## References
+
+- Prometheus: https://prometheus.io/docs/
+- Grafana: https://grafana.com/docs/
+- Spring Boot Actuator: https://docs.spring.io/spring-boot/reference/actuator/index.html
 - Micrometer: https://micrometer.io/

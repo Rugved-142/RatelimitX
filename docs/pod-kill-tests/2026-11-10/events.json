@@ -1,0 +1,11 @@
+{
+  "loadStartedAtMs": 1794344378922,
+  "podDeletedAtMs": 1794344399007,
+  "deleteCommandReturnedAtMs": 1794344399058,
+  "podGoneAtMs": 1794344414944,
+  "endpointsRestoredAtMs": 1794344414894,
+  "loadFinishedAtMs": 1794344459007,
+  "deletedPod": "ratelimitx-6765f8796f-6mrlg",
+  "replicas": 2,
+  "note": "podDeletedAtMs is when the delete was issued, not when it completed. Every interval measured from it is therefore an upper bound."
+}
