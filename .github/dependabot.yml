@@ -42,14 +42,18 @@ updates:
           - "version-update:semver-major"
           - "version-update:semver-minor"
 
-      # Gatling: no updates at all.
+      # Gatling: no updates at all, across both groups.
+      #
+      # This covers gatling-app, gatling-charts-highcharts and gatling-maven-plugin. The plugin
+      # matters as much as the libraries: it drives the simulation, so moving it changes how the
+      # measurement was taken.
       #
       # The published benchmark figures were produced by this version of the simulation, on this
       # version of the harness. Changing it invalidates the comparison between the committed runs
       # and anything measured afterwards, so a bump means deliberately re-running and
       # regenerating docs/benchmarks.md - not merging a dependency pull request. Bump it by hand
       # when there is a reason to, and re-measure in the same change.
-      - dependency-name: "io.gatling:gatling-app"
+      - dependency-name: "io.gatling:*"
       - dependency-name: "io.gatling.highcharts:*"
 
       # The Gatling simulation is Scala source, so the Scala major version is a language
