@@ -4,7 +4,7 @@ A rate limiting service: JWT authentication with per-tier limits, three Redis-ba
 a circuit breaker with an in-memory fallback, and Prometheus metrics. Runs under Docker Compose
 or on Kubernetes.
 
-[![CI](https://github.com/Rugved-142/RatelimitX/actions/workflows/ci.yml/badge.svg?branch=hardening)](https://github.com/Rugved-142/RatelimitX/actions/workflows/ci.yml)
+[![CI](https://github.com/Rugved-142/RatelimitX/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Rugved-142/RatelimitX/actions/workflows/ci.yml)
 ![Java 21](https://img.shields.io/badge/Java-21-orange?style=flat-square&logo=openjdk)
 ![Spring Boot 4.0.9](https://img.shields.io/badge/Spring%20Boot-4.0.9-green?style=flat-square&logo=springboot)
 ![License MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
