@@ -46,9 +46,25 @@ class WindowRolloverIT extends AbstractIntegrationTest {
         Thread.sleep(duration.toMillis());
     }
 
+    /**
+     * Waits until a fresh fixed window has just begun.
+     *
+     * <p>The fixed window counter is keyed by window number, so a sequence of requests that
+     * straddles a boundary is split across two counters: the limit is enforced correctly, but it
+     * is enforced twice. That is the documented behaviour of this algorithm, not a fault - and it
+     * means a test asserting "the Nth request is denied" has to control which window its requests
+     * land in. These tests take about 10ms to issue their requests against a 2 second window, so
+     * roughly one run in a hundred would otherwise start a window mid-sequence and see the limit
+     * refreshed underneath it.
+     */
+    private void startOfAFreshWindow() throws InterruptedException {
+        sleep(Duration.ofMillis(fixedWindow.millisUntilReset() + 50));
+    }
+
     @Test
     void fixedWindowAdmitsTheFullLimitAgainInTheNextWindow() throws Exception {
         String user = uniqueUser("fw-rollover");
+        startOfAFreshWindow();
         int limit = 5;
 
         for (int i = 0; i < limit; i++) {
@@ -73,6 +89,7 @@ class WindowRolloverIT extends AbstractIntegrationTest {
     @Test
     void fixedWindowStaysDeniedBeforeTheWindowEnds() throws Exception {
         String user = uniqueUser("fw-early");
+        startOfAFreshWindow();
         for (int i = 0; i < 5; i++) {
             fixedWindow.checkWithInfo(user, 5);
         }
