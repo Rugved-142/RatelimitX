@@ -13,11 +13,9 @@ import com.ratelimitx.core.model.RateLimitResult;
 /**
  * Token bucket.
  *
- * <p>Capacity and refill rate are derived from the caller's own limit rather than being fixed:
- * capacity is the tier limit, and the refill rate is {@code limit / 60} tokens per second, so a
- * tier allowed 100 requests a minute can burst to 100 and then sustain 100 a minute. Previously
- * both were hardcoded to 10 and 1.0, which meant a PREMIUM or ADMIN caller was silently limited
- * to the FREE tier's bucket while the response headers advertised their real limit.
+ * <p>Capacity and refill rate both come from the caller's own limit: capacity is the tier limit,
+ * and the refill rate is {@code limit / 60} tokens per second. A tier allowed 100 requests a
+ * minute can therefore burst to 100 and then sustain 100 a minute.
  *
  * <p>Elapsed time is measured with Redis's clock, so instances with skewed system clocks cannot
  * refill a bucket at different rates or, worse, refill it twice for the same second.
