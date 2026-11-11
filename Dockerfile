@@ -18,7 +18,7 @@ RUN mvn package -DskipTests
 # ============================================================
 # STAGE 2: RUN
 # ============================================================
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 
 # curl is needed by HEALTHCHECK below; the JRE image does not ship it.
 #
