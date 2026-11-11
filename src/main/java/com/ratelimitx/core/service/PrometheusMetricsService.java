@@ -14,10 +14,13 @@ import io.micrometer.core.instrument.Timer;
  *
  * <p>Every tag used here has a small, fixed set of values. Tagging by user id would create one
  * Prometheus time series per user and grow without bound, so these metrics deliberately carry no
- * per-user label; per-user figures come from {@code /metrics/user/{id}} instead.
+ * per-user label. Per-user state is available from the admin endpoints instead.
  *
- * <p>Each meter is registered once in the constructor and reused. Re-registering per request also
- * works but hashes the tag set on every call for no benefit.
+ * <p>Every method here swallows its own exceptions: a metrics failure must not fail the request
+ * that was being measured. Callers therefore do not need to guard these calls.
+ *
+ * <p>Each call builds its meter and registers it. Micrometer returns the meter already held for
+ * that name and tag set rather than creating a second one, so this costs a lookup, not a meter.
  */
 @Service
 public class PrometheusMetricsService {

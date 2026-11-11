@@ -50,16 +50,11 @@ public class ApiController {
         long responseTime = System.currentTimeMillis() - startTime;
         String algorithm = resilientRateLimiter.getCurrentMode();
 
-        // Metrics are non-critical: a failure here must not fail the request.
-        try {
-            prometheusMetricsService.recordRequest(result.isAllowed(), algorithm);
-            prometheusMetricsService.recordCheckDuration(responseTime, algorithm, result.isAllowed());
-
-            if (!result.isAllowed()) {
-                prometheusMetricsService.recordDenied(algorithm);
-            }
-        } catch (Exception e) {
-            // Intentionally ignored.
+        // Each of these swallows its own failures; metrics must not be able to fail a request.
+        prometheusMetricsService.recordRequest(result.isAllowed(), algorithm);
+        prometheusMetricsService.recordCheckDuration(responseTime, algorithm, result.isAllowed());
+        if (!result.isAllowed()) {
+            prometheusMetricsService.recordDenied(algorithm);
         }
 
         // Report the limit the limiter actually enforced, not the one we asked for: if the two

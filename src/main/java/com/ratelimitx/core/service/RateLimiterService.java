@@ -3,6 +3,7 @@ package com.ratelimitx.core.service;
 import java.util.Collections;
 import java.util.List;
 
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -92,8 +93,7 @@ public class RateLimiterService {
      */
     private long redisNowMillis() {
         Long time = redisTemplate.execute(
-                (org.springframework.data.redis.core.RedisCallback<Long>) connection ->
-                        connection.serverCommands().time());
+                (RedisCallback<Long>) connection -> connection.serverCommands().time());
         return time != null ? time : System.currentTimeMillis();
     }
 
