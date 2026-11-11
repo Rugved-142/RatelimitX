@@ -102,6 +102,21 @@ file that moves cannot leave a dangling reference here.
 | There is no Alertmanager | `docker-compose.yml` |
 | Grafana's dashboard is provisioned on startup | `grafana/provisioning` |
 
+## Analytics feed
+
+| Claim | Evidence |
+|-------|----------|
+| The feed is off by default, and off means no thread, no topics and no consumer | `EventsDisabledIT`, which runs with no Kafka container at all; `ratelimit.events.enabled=false` in `application.properties` |
+| A decision becomes an hourly aggregate of (hour, role, algorithm, allowed, denied) | `AnalyticsEndToEndIT` |
+| The algorithm recorded is the mode that actually decided, `local-fallback` included | `ApiController` publishes `ResilientRateLimiter.getCurrentMode()`; asserted in `AnalyticsEndToEndIT` |
+| The request thread never waits on Kafka | `RateLimitEventPublisher.publish()` is a non-blocking `offer`; `EventsSurviveAKafkaOutageIT` and `EventsQueueFullIT` assert `/api/data` still answers 200 with the broker paused |
+| Events are dropped rather than retried indefinitely, and every drop is counted | `EventsQueueFullIT` (queue full) and `EventsSurviveAKafkaOutageIT` (send failed) |
+| Delivery is at-least-once but counting is at-most-once per event id | `processed_events` primary key written in the same transaction as the aggregate; `AnalyticsEndToEndIT` delivers one event twice |
+| A record that cannot be deserialized is parked instead of blocking the partition | `PoisonMessageIT` reads it back off the dead letter topic |
+| `GET /admin/analytics` is ADMIN-only | The `/admin/**` rule in `SecurityConfig`; `SecurityIT` asserts 403 for a USER token on `/admin/**` |
+| The event metrics carry no per-user label | `RateLimitEventPublisher` registers three counters with no tags |
+| Kafka is one KRaft node with replication factor 1 | `docker-compose.yml`, behind the `kafka` profile |
+
 ## Process
 
 | Claim | Evidence |
@@ -125,5 +140,8 @@ Things a reader might expect, which are absent because nothing here establishes 
 - High availability. Redis and PostgreSQL are one replica each.
 - Behaviour under node failure, a Redis that refuses connections, or a Redis that loses data.
 - Any comparison with another rate limiter.
+- That the analytics aggregates are complete. The feed drops events by design, so the aggregates
+  are a sample of the decisions, not a record of them, and nothing should be billed or audited
+  from them.
 - Production readiness. There is no Ingress, TLS, NetworkPolicy, autoscaling or Alertmanager, and
   the resource limits were sized for a laptop.
