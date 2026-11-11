@@ -422,14 +422,22 @@ These are properties of the system as it stands, not a to-do list.
   returns `truncated: true` rather than presenting a capped count as complete.
 - **Rate limit state is not durable.** Counters carry a TTL and a Redis restart drops them, which
   costs at most one window.
-- **The analytics feed is best-effort and loses events.** It is an analytics stream, not an audit
-  log. Events are dropped when the queue is full or a send fails, and both are counted rather than
-  hidden; an absent event does not mean the request did not happen. Do not bill from it.
+- **Analytics delivery is best-effort, and the feed loses events.** It is an analytics stream, not
+  an audit log. An event is dropped when Kafka is down or unreachable, and when the in-memory queue
+  is full because the broker is not keeping up; each case has its own counter rather than being
+  hidden. An absent event does not mean the request did not happen, so the aggregates are a sample
+  of the decisions and not a record of them. Do not bill or audit from them.
 - **Analytics delivery is at-least-once, so the consumer deduplicates.** The event id is a primary
   key in `processed_events`, written in the same transaction as the aggregate, which makes counting
   at-most-once per id. Without that table a redelivery would inflate the counts.
 - **Aggregates can lag.** Events are sent from a queue by one thread, so during a stall the hourly
   rows trail real time by however long the queue takes to drain.
+- **`processed_events` is never pruned.** The table that makes counting idempotent gains one row
+  per event and nothing ever deletes from it: there is no TTL, no scheduled cleanup and no
+  retention setting. On a long-running deployment it grows without bound, and it grows in
+  proportion to request volume rather than to the aggregates it protects. Pruning it is safe only
+  past the point where Kafka can no longer redeliver, which is the topic's retention window, and
+  nothing here enforces that relationship.
 - **Kafka is a single node under Compose, in KRaft mode.** Every replication factor is 1, so it is
   a development broker, not a durable log. Kubernetes does not run it at all.
 
