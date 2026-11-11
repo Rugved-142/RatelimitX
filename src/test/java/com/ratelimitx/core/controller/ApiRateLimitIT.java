@@ -16,6 +16,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.context.TestPropertySource;
 
 import com.ratelimitx.core.config.RateLimitConfig;
 import com.ratelimitx.core.entity.Role;
@@ -23,12 +24,19 @@ import com.ratelimitx.core.entity.User;
 import com.ratelimitx.core.repository.UserRepository;
 import com.ratelimitx.core.security.JwtUtil;
 import com.ratelimitx.core.support.AbstractIntegrationTest;
+import com.ratelimitx.core.support.TestRedisTimeouts;
 
 /**
  * {@code GET /api/data} over HTTP for every tier and every algorithm: the status codes, the
  * rate limit headers and the {@code Retry-After} a client actually receives.
  */
 @AutoConfigureMockMvc
+// Behavioural test: it verifies rate limiting, not timeout handling, so it does not run
+// against the 200ms production Redis timeout. See TestRedisTimeouts.
+@TestPropertySource(properties = {
+        TestRedisTimeouts.COMMAND_TIMEOUT,
+        TestRedisTimeouts.CONNECT_TIMEOUT,
+})
 class ApiRateLimitIT extends AbstractIntegrationTest {
 
     @Autowired

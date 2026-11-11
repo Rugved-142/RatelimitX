@@ -18,11 +18,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.context.TestPropertySource;
 
 import com.ratelimitx.core.entity.Role;
 import com.ratelimitx.core.entity.User;
 import com.ratelimitx.core.repository.UserRepository;
 import com.ratelimitx.core.support.AbstractIntegrationTest;
+import com.ratelimitx.core.support.TestRedisTimeouts;
 import com.ratelimitx.core.support.IntegrationTestContainers;
 
 import io.jsonwebtoken.Jwts;
@@ -32,6 +34,12 @@ import io.jsonwebtoken.security.Keys;
  * End-to-end authentication and authorization behaviour over HTTP.
  */
 @AutoConfigureMockMvc
+// Behavioural test: it verifies rate limiting, not timeout handling, so it does not run
+// against the 200ms production Redis timeout. See TestRedisTimeouts.
+@TestPropertySource(properties = {
+        TestRedisTimeouts.COMMAND_TIMEOUT,
+        TestRedisTimeouts.CONNECT_TIMEOUT,
+})
 class SecurityIT extends AbstractIntegrationTest {
 
     @Autowired

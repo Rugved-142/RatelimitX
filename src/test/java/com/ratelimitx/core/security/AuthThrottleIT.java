@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.ratelimitx.core.support.AbstractIntegrationTest;
+import com.ratelimitx.core.support.TestRedisTimeouts;
 
 /**
  * Per-client-IP throttling of the unauthenticated authentication endpoints.
@@ -23,9 +24,13 @@ import com.ratelimitx.core.support.AbstractIntegrationTest;
  * one on every case.
  */
 @AutoConfigureMockMvc
+// The two Redis timeouts: this verifies rate limiting, not timeout handling, so it does not
+// run against the 200ms production value. See TestRedisTimeouts.
 @TestPropertySource(properties = {
         "ratelimit.auth.login-limit-per-minute=3",
-        "ratelimit.auth.register-limit-per-minute=3"
+        "ratelimit.auth.register-limit-per-minute=3",
+        TestRedisTimeouts.COMMAND_TIMEOUT,
+        TestRedisTimeouts.CONNECT_TIMEOUT,
 })
 class AuthThrottleIT extends AbstractIntegrationTest {
 

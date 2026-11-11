@@ -376,7 +376,7 @@ These are properties of the system as it stands, not a to-do list.
 
 ## Testing
 
-`./mvnw -B verify` runs everything: 65 unit tests and 100 integration tests. The integration tests
+`./mvnw -B verify` runs everything: 69 unit tests and 100 integration tests. The integration tests
 use Testcontainers, so Docker must be running.
 
 | Suite | Kind | Covers |
@@ -385,6 +385,7 @@ use Testcontainers, so Docker must be running.
 | `LocalRateLimiterTest` | unit | Atomic admission, rollover under 200 threads, eviction |
 | `RateLimitConfigTest` | unit | Algorithm validation and concurrent switching |
 | `JwtPropertiesTest` | unit | Startup refuses a missing or short `JWT_SECRET` |
+| `RedisTimeoutConfigTest` | unit | The production Redis timeout is unchanged, so the integration tests' relaxed override cannot become the real value |
 | `RateLimitAlgorithmIT` | Testcontainers | Exact limits, tier limits and 200-thread concurrency per algorithm |
 | `WindowRolloverIT` | Testcontainers | Real waiting over 2-second windows: rollover and token refill |
 | `SecurityIT` | Testcontainers + MockMvc | Absent, forged, expired and orphaned tokens; role enforcement; actuator exposure |
