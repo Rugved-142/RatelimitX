@@ -1,7 +1,5 @@
 package com.ratelimitx.core.support;
 
-import java.time.Duration;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,7 +10,6 @@ import org.springframework.test.context.DynamicPropertySource;
 
 import com.ratelimitx.core.circuitbreaker.CircuitBreaker;
 import com.ratelimitx.core.circuitbreaker.LocalRateLimiter;
-import com.ratelimitx.core.circuitbreaker.RedisFailureClassifier;
 
 /**
  * Base for tests that need a real Redis and PostgreSQL.
@@ -44,59 +41,17 @@ public abstract class AbstractIntegrationTest {
         IntegrationTestContainers.registerProperties(registry);
     }
 
-    /**
-     * How long to wait for Redis to start answering again before giving up.
-     *
-     * <p>Generous on purpose. Waiting costs nothing when Redis is already up, because the first
-     * attempt succeeds; the only run that spends this time is one that was going to fail anyway,
-     * and then the failure says Redis never came back rather than reporting a timeout from
-     * whichever test happened to be next.
-     */
-    private static final Duration REDIS_READY_TIMEOUT = Duration.ofSeconds(30);
-
     @BeforeEach
     void resetSharedState() {
-        awaitRedisResponsive();
+        // Redis must be answering before anything is asked of it: a test that paused the
+        // container may have only just let it go. One shared gate, used here and after every
+        // unpause, rather than a second implementation of the same wait.
+        IntegrationTestContainers.awaitRedisSettled();
         try (RedisConnection connection = redis.getRequiredConnectionFactory().getConnection()) {
             connection.serverCommands().flushAll();
         }
         circuitBreaker.reset();
         localRateLimiter.clear();
-    }
-
-    /**
-     * Blocks until Redis answers a PING, or fails the test if it never does.
-     *
-     * <p>Only Redis connectivity and timeout failures are retried, using the same classifier the
-     * circuit breaker uses in production: anything else is a real problem and should surface
-     * immediately rather than after a 30 second wait.
-     */
-    private void awaitRedisResponsive() {
-        long deadline = System.nanoTime() + REDIS_READY_TIMEOUT.toNanos();
-        RuntimeException lastFailure = null;
-
-        while (System.nanoTime() < deadline) {
-            try (RedisConnection connection = redis.getRequiredConnectionFactory().getConnection()) {
-                connection.ping();
-                return;
-            } catch (RuntimeException e) {
-                if (!RedisFailureClassifier.isRedisFailure(e)) {
-                    throw e;
-                }
-                lastFailure = e;
-            }
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("interrupted while waiting for Redis", e);
-            }
-        }
-
-        throw new IllegalStateException(
-                "Redis did not answer within " + REDIS_READY_TIMEOUT
-                        + "; a test that pauses the container may have left it paused",
-                lastFailure);
     }
 
     /** A user id unique to this test run, so parallel or repeated runs cannot collide. */

@@ -47,6 +47,8 @@ class RedisReadinessIT extends AbstractIntegrationTest {
         } catch (RuntimeException e) {
             // Already running, which is the state we wanted.
         }
+        // Same reason as in RedisOutageIT: thawed is not the same as usable.
+        IntegrationTestContainers.awaitRedisSettled();
     }
 
     @AfterAll
