@@ -98,6 +98,11 @@ public class RateLimitEventPublisher {
         return queue.size();
     }
 
+    /** Visible for tests: whether this publisher started a sending thread. */
+    public boolean isRunning() {
+        return running;
+    }
+
     private void drain() {
         while (running) {
             try {
