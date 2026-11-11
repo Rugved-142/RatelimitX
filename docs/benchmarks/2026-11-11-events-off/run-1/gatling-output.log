@@ -1,0 +1,407 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.ratelimitx:core >-------------------------
+[INFO] Building RateLimitX 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> gatling:4.8.0:test (default-cli) > test-compile @ core >>>
+[INFO] 
+[INFO] --- jacoco:0.8.16:prepare-agent (prepare-agent) @ core ---
+[INFO] jacoco.argLine set to -javaagent:/Users/rugvedgundawar/.m2/repository/org/jacoco/org.jacoco.agent/0.8.16/org.jacoco.agent-0.8.16-runtime.jar=destfile=/Users/rugvedgundawar/Desktop/RatelimitX/RatelimitX/target/jacoco.exec
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ core ---
+[INFO] Copying 2 resources from src/main/resources to target/classes
+[INFO] Copying 0 resource from src/main/resources to target/classes
+[INFO] 
+[INFO] --- compiler:3.14.1:compile (default-compile) @ core ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ core ---
+[INFO] Copying 1 resource from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.14.1:testCompile (default-testCompile) @ core ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- scala:4.8.1:testCompile (default) @ core ---
+[WARNING] Direct modification of testCompileSourceRoots through add() is deprecated and will not work in Maven 4.0.0. Please use the add/remove methods instead. If you're using a plugin that causes this warning, please upgrade to the latest version and report an issue if the warning persists. To disable these warnings, set -Dmaven.project.sourceRoots.warningsDisabled=true on the command line, in the .mvn/maven.config file, or in project POM properties.
+[INFO] Compiler bridge file: /Users/rugvedgundawar/.sbt/1.0/zinc/org.scala-sbt/org.scala-sbt-compiler-bridge_2.13-1.8.0-bin_2.13.12__67.0-1.8.0_20221110T195421.jar
+[INFO] compile in 1.1 s
+[INFO] 
+[INFO] <<< gatling:4.8.0:test (default-cli) < test-compile @ core <<<
+[INFO] 
+[INFO] 
+[INFO] --- gatling:4.8.0:test (default-cli) @ core ---
+16:38:38,922 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found logback-core version 1.5.38
+16:38:38,924 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6a78afa0 - Here is a list of configurators discovered as a service, by rank: 
+16:38:38,924 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6a78afa0 -   org.springframework.boot.logging.logback.RootLogLevelConfigurator
+16:38:38,924 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6a78afa0 - They will be invoked in order until ExecutionStatus.DO_NOT_INVOKE_NEXT_IF_ANY is returned.
+16:38:38,924 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6a78afa0 - Constructed configurator of type class org.springframework.boot.logging.logback.RootLogLevelConfigurator
+16:38:38,933 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6a78afa0 - org.springframework.boot.logging.logback.RootLogLevelConfigurator.configure() call lasted 0 milliseconds. ExecutionStatus=INVOKE_NEXT_IF_ANY
+16:38:38,933 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6a78afa0 - Trying to configure with ch.qos.logback.classic.util.DefaultJoranConfigurator
+16:38:38,934 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6a78afa0 - Constructed configurator of type class ch.qos.logback.classic.util.DefaultJoranConfigurator
+16:38:38,937 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Could NOT find resource [logback-test.xml]
+16:38:38,939 |-INFO in ch.qos.logback.classic.LoggerContext[default] - Found resource [logback.xml] at [jar:file:/Users/rugvedgundawar/.m2/repository/io/gatling/gatling-maven-plugin/4.8.0/gatling-maven-plugin-4.8.0.jar!/logback.xml]
+16:38:38,986 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - <level> element is deprecated. Near [level] on line 12
+16:38:38,986 |-WARN in ch.qos.logback.classic.joran.action.LevelAction - Please use "level" attribute within <logger> or <root> elements instead.
+16:38:39,017 |-INFO in ch.qos.logback.classic.model.processor.ConfigurationModelHandlerFull - Scan attribute not set or set to unrecognized value.
+16:38:39,020 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - Processing appender named [CONSOLE]
+16:38:39,020 |-INFO in ch.qos.logback.core.model.processor.AppenderModelHandler - About to instantiate appender of type [ch.qos.logback.core.ConsoleAppender]
+16:38:39,025 |-INFO in ch.qos.logback.core.model.processor.ImplicitModelHandler - Assuming default type [ch.qos.logback.classic.encoder.PatternLayoutEncoder] for [encoder] property
+16:38:39,049 |-INFO in ch.qos.logback.core.ConsoleAppender[CONSOLE] - NOTE: Writing to the console can be slow. Try to avoid logging to the 
+16:38:39,049 |-INFO in ch.qos.logback.core.ConsoleAppender[CONSOLE] - console in production environments, especially in high volume systems.
+16:38:39,049 |-INFO in ch.qos.logback.core.ConsoleAppender[CONSOLE] - See also https://logback.qos.ch/codes.html#slowConsole
+16:38:39,050 |-INFO in ch.qos.logback.classic.model.processor.LevelModelHandler - ROOT level set to WARN
+16:38:39,050 |-INFO in ch.qos.logback.core.model.processor.AppenderRefModelHandler - Attaching appender named [CONSOLE] to Logger[ROOT]
+16:38:39,050 |-INFO in ch.qos.logback.core.model.processor.DefaultProcessor@2f4948e4 - End of configuration.
+16:38:39,050 |-INFO in ch.qos.logback.classic.joran.JoranConfigurator@1f2586d6 - Registering current configuration as safe fallback point
+16:38:39,050 |-INFO in ch.qos.logback.classic.util.ContextInitializer@6a78afa0 - ch.qos.logback.classic.util.DefaultJoranConfigurator.configure() call lasted 116 milliseconds. ExecutionStatus=DO_NOT_INVOKE_NEXT_IF_ANY
+
+[setup] creating users against http://localhost:8080
+[setup] 16 users ready: 10 x USER@10/min, 5 x PREMIUM@100/min, 1 x ADMIN@1000/min
+Simulation loadtest.RateLimitXSimulation started...
+
+================================================================================
+2026-11-11 16:38:51                                           5s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=250    KO=0     )
+> GET /api/data                                            (OK=250    KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[#                                                                         ]  1%
+          waiting: 15250  / active: 0      / done: 250   
+================================================================================
+
+
+================================================================================
+2026-11-11 16:38:56                                          10s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=500    KO=0     )
+> GET /api/data                                            (OK=500    KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[##                                                                        ]  3%
+          waiting: 15000  / active: 0      / done: 500   
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:01                                          15s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=750    KO=0     )
+> GET /api/data                                            (OK=750    KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[###                                                                       ]  4%
+          waiting: 14750  / active: 0      / done: 750   
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:06                                          20s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=1000   KO=0     )
+> GET /api/data                                            (OK=1000   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[####                                                                      ]  6%
+          waiting: 14500  / active: 0      / done: 1000  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:11                                          25s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=1250   KO=0     )
+> GET /api/data                                            (OK=1250   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[#####                                                                     ]  8%
+          waiting: 14250  / active: 0      / done: 1250  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:16                                          30s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=1500   KO=0     )
+> GET /api/data                                            (OK=1500   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[#######                                                                   ]  9%
+          waiting: 14000  / active: 0      / done: 1500  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:21                                          35s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=1750   KO=0     )
+> GET /api/data                                            (OK=1750   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[########                                                                  ] 11%
+          waiting: 13750  / active: 0      / done: 1750  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:26                                          40s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=2000   KO=0     )
+> GET /api/data                                            (OK=2000   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[#########                                                                 ] 12%
+          waiting: 13500  / active: 0      / done: 2000  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:31                                          45s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=2500   KO=0     )
+> GET /api/data                                            (OK=2500   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[###########                                                               ] 16%
+          waiting: 13000  / active: 0      / done: 2500  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:36                                          50s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=3000   KO=0     )
+> GET /api/data                                            (OK=3000   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[##############                                                            ] 19%
+          waiting: 12500  / active: 0      / done: 3000  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:41                                          55s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=3500   KO=0     )
+> GET /api/data                                            (OK=3500   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[################                                                          ] 22%
+          waiting: 12000  / active: 0      / done: 3500  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:46                                          60s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=4000   KO=0     )
+> GET /api/data                                            (OK=4000   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[###################                                                       ] 25%
+          waiting: 11500  / active: 0      / done: 4000  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:51                                          65s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=4500   KO=0     )
+> GET /api/data                                            (OK=4500   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[#####################                                                     ] 29%
+          waiting: 11000  / active: 0      / done: 4500  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:39:56                                          70s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=5000   KO=0     )
+> GET /api/data                                            (OK=5000   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[#######################                                                   ] 32%
+          waiting: 10500  / active: 0      / done: 5000  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:01                                          75s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=5750   KO=0     )
+> GET /api/data                                            (OK=5750   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[###########################                                               ] 37%
+          waiting: 9750   / active: 0      / done: 5750  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:06                                          80s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=6500   KO=0     )
+> GET /api/data                                            (OK=6500   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[###############################                                           ] 41%
+          waiting: 9000   / active: 0      / done: 6500  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:11                                          85s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=7250   KO=0     )
+> GET /api/data                                            (OK=7250   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[##################################                                        ] 46%
+          waiting: 8250   / active: 0      / done: 7250  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:16                                          90s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=8000   KO=0     )
+> GET /api/data                                            (OK=8000   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[######################################                                    ] 51%
+          waiting: 7500   / active: 0      / done: 8000  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:21                                          95s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=8750   KO=0     )
+> GET /api/data                                            (OK=8750   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[#########################################                                 ] 56%
+          waiting: 6750   / active: 0      / done: 8750  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:26                                         100s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=9500   KO=0     )
+> GET /api/data                                            (OK=9500   KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[#############################################                             ] 61%
+          waiting: 6000   / active: 0      / done: 9500  
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:31                                         105s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=10499  KO=0     )
+> GET /api/data                                            (OK=10499  KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[##################################################-                       ] 67%
+          waiting: 5000   / active: 1      / done: 10499 
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:36                                         110s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=11500  KO=0     )
+> GET /api/data                                            (OK=11500  KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[######################################################                    ] 74%
+          waiting: 4000   / active: 0      / done: 11500 
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:41                                         115s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=12500  KO=0     )
+> GET /api/data                                            (OK=12500  KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[###########################################################               ] 80%
+          waiting: 3000   / active: 0      / done: 12500 
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:46                                         120s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=13500  KO=0     )
+> GET /api/data                                            (OK=13500  KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[################################################################          ] 87%
+          waiting: 2000   / active: 0      / done: 13500 
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:51                                         125s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=14500  KO=0     )
+> GET /api/data                                            (OK=14500  KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[#####################################################################     ] 93%
+          waiting: 1000   / active: 0      / done: 14500 
+================================================================================
+
+
+================================================================================
+2026-11-11 16:40:56                                         130s elapsed
+---- Requests ------------------------------------------------------------------
+> Global                                                   (OK=15500  KO=0     )
+> GET /api/data                                            (OK=15500  KO=0     )
+
+---- Rate limited API ----------------------------------------------------------
+[##########################################################################]100%
+          waiting: 0      / active: 0      / done: 15500 
+================================================================================
+
+Simulation loadtest.RateLimitXSimulation completed in 130 seconds
+[teardown] allowed=2273 denied=13227 unexpected=0 -> /Users/rugvedgundawar/Desktop/RatelimitX/RatelimitX/docs/benchmarks/2026-11-11-events-off/run-1/decisions.json
+Parsing log file(s)...
+Parsing log file(s) done in 0s.
+Generating reports...
+
+================================================================================
+---- Global Information --------------------------------------------------------
+> request count                                      15500 (OK=15500  KO=0     )
+> min response time                                      0 (OK=0      KO=-     )
+> max response time                                    492 (OK=492    KO=-     )
+> mean response time                                     2 (OK=2      KO=-     )
+> std deviation                                         12 (OK=12     KO=-     )
+> response time 50th percentile                          1 (OK=1      KO=-     )
+> response time 75th percentile                          2 (OK=2      KO=-     )
+> response time 95th percentile                          4 (OK=4      KO=-     )
+> response time 99th percentile                          6 (OK=6      KO=-     )
+> mean requests/sec                                119.231 (OK=119.231 KO=-     )
+---- Response Time Distribution ------------------------------------------------
+> t < 800 ms                                         15500 (100%)
+> 800 ms <= t < 1200 ms                                  0 (  0%)
+> t >= 1200 ms                                           0 (  0%)
+> failed                                                 0 (  0%)
+================================================================================
+
+Reports generated, please open the following file: file:///Users/rugvedgundawar/Desktop/RatelimitX/RatelimitX/target/gatling/ratelimitxsimulation-20261111213844784/index.html
+Global: count of failed events is 0.0 : true (actual : 0.0)
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  02:20 min
+[INFO] Finished at: 2026-11-11T16:40:57-05:00
+[INFO] ------------------------------------------------------------------------

@@ -360,6 +360,7 @@ tests. None is typed by hand, and anything that could not be read from the data 
 | [docs/failure-test.md](docs/failure-test.md) | Redis frozen for 40s under load, single instance |
 | [docs/failure-test-kubernetes.md](docs/failure-test-kubernetes.md) | The same, on Kubernetes with two replicas |
 | [docs/pod-kill-test.md](docs/pod-kill-test.md) | One of two replicas deleted under load |
+| [docs/analytics-overhead.md](docs/analytics-overhead.md) | The analytics feed off against on, same load shape, same machine |
 | [docs/slo.md](docs/slo.md) | What has been measured, and why no objective is set from it |
 
 Reproduce any of them:
@@ -367,6 +368,10 @@ Reproduce any of them:
 ```bash
 scripts/benchmark.sh --runs 3 --algorithm sliding-window
 ```
+
+The analytics comparison is two of those, one with `RATELIMIT_EVENTS_ENABLED=false` and one with
+it true, kept apart by `--dir-suffix` and compared by
+`scripts/report_events_overhead.py`.
 
 ```bash
 scripts/failure-test.sh --platform compose

@@ -1,0 +1,13 @@
+{
+  "allowed": 2273,
+  "denied": 13227,
+  "unexpected": 0,
+  "total": 15500,
+  "users": 16,
+  "tierMix": "10 x USER@10/min; 5 x PREMIUM@100/min; 1 x ADMIN@1000/min",
+  "startRps": 50,
+  "stepRps": 50,
+  "steps": 4,
+  "stepSeconds": 30,
+  "warmupSeconds": 10
+}
