@@ -12,9 +12,8 @@ import com.ratelimitx.core.model.RateLimitResult;
 /**
  * Dispatches a rate limit check to the configured algorithm, behind the circuit breaker.
  *
- * <p>Every algorithm receives the caller's own limit. The token bucket used to ignore it and
- * always apply a hardcoded capacity of 10, so a PREMIUM caller was limited as if they were on the
- * free tier while the response headers advertised 100.
+ * <p>Every algorithm receives the caller's own limit, so the limit enforced is the one the
+ * response headers advertise.
  */
 @Service
 public class ResilientRateLimiter {

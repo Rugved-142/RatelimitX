@@ -39,15 +39,11 @@ public final class RedisFailureClassifier {
             TimeoutException.class,
     };
 
-    /**
-     * Lettuce types, matched by name so this class does not depend on the driver being present at
-     * compile time.
-     */
+    /** Lettuce types, matched by name so this class imports nothing from the driver. */
     private static final String[] REDIS_FAILURE_CLASS_NAMES = {
             "io.lettuce.core.RedisConnectionException",
             "io.lettuce.core.RedisCommandTimeoutException",
             "io.lettuce.core.RedisException",
-            "redis.clients.jedis.exceptions.JedisConnectionException",
     };
 
     private RedisFailureClassifier() {

@@ -238,11 +238,9 @@ public class AdminController {
     /**
      * Sets the rate limit, and optionally the role, that will actually be enforced for a user.
      *
-     * <p>This used to write the value into a Redis hash called {@code user-limits}. Nothing on the
-     * request path ever read that hash: the limit applied to {@code /api/data} comes from the
-     * authenticated principal, which is loaded from the users table. So the endpoint reported
-     * success, the admin views below echoed the new number back, and the limit the caller actually
-     * received never changed. It now updates the user row, which is the value the limiter uses.
+     * <p>The new limit is written to the user row, which is where it has to go to take effect:
+     * the limit applied to {@code /api/data} comes from the authenticated principal, and that is
+     * loaded from the users table on each request.
      */
     @PostMapping("/limit")
     public Map<String, Object> setUserLimit(@Valid @RequestBody UpdateUserLimitRequest request) {

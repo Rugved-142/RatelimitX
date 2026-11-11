@@ -18,11 +18,9 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code JwtAuthenticationFilter} populated when it validated the token.
  *
  * <p>Nothing in this class queries Postgres, and the rate limit decision itself touches Redis
- * only. That is not the same as saying the request does not reach the database: the filter that
- * built the principal loaded it with {@code CustomUserDetailsService}, which reads the users
- * table on every authenticated request. This javadoc used to claim the per-request path touched
- * Redis alone, which was wrong and is the sort of thing a reader would reasonably rely on when
- * reasoning about a Postgres outage.
+ * only - but the request as a whole does reach the database: the filter that built the principal
+ * loaded it with {@code CustomUserDetailsService}, which reads the users table on every
+ * authenticated request. A Postgres outage therefore fails the request before it gets here.
  */
 @RestController
 @RequestMapping("/api")
@@ -52,16 +50,11 @@ public class ApiController {
         long responseTime = System.currentTimeMillis() - startTime;
         String algorithm = resilientRateLimiter.getCurrentMode();
 
-        // Metrics are non-critical: a failure here must not fail the request.
-        try {
-            prometheusMetricsService.recordRequest(result.isAllowed(), algorithm);
-            prometheusMetricsService.recordCheckDuration(responseTime, algorithm, result.isAllowed());
-
-            if (!result.isAllowed()) {
-                prometheusMetricsService.recordDenied(algorithm);
-            }
-        } catch (Exception e) {
-            // Intentionally ignored.
+        // Each of these swallows its own failures; metrics must not be able to fail a request.
+        prometheusMetricsService.recordRequest(result.isAllowed(), algorithm);
+        prometheusMetricsService.recordCheckDuration(responseTime, algorithm, result.isAllowed());
+        if (!result.isAllowed()) {
+            prometheusMetricsService.recordDenied(algorithm);
         }
 
         // Report the limit the limiter actually enforced, not the one we asked for: if the two
