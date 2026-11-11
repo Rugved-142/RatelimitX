@@ -8,7 +8,7 @@ updates:
       interval: weekly
       day: monday
       time: "06:00"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     labels: ["dependencies", "java"]
     commit-message:
       prefix: "build"
@@ -21,10 +21,24 @@ updates:
           - "org.springframework.boot:*"
           - "org.springframework.security:*"
       testing:
+        # Minor and patch only. A major bump of a test library tends to come with its own
+        # migration, and bundling several of those into one pull request makes it unreviewable;
+        # majors still arrive, one dependency at a time.
+        update-types:
+          - minor
+          - patch
         patterns:
           - "org.testcontainers:*"
           - "org.junit*:*"
           - "org.jacoco:*"
+
+    ignore:
+      # The Gatling simulation is Scala source, so the Scala major version is a language
+      # migration rather than a dependency bump.
+      - dependency-name: "org.scala-lang:scala-library"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "redis.clients:jedis"
+        update-types: ["version-update:semver-major"]
 
   # Base images in the Dockerfile.
   - package-ecosystem: docker
@@ -37,6 +51,13 @@ updates:
     labels: ["dependencies", "docker"]
     commit-message:
       prefix: "build"
+    ignore:
+      # Both base images carry the Java version, so a major bump of either is a JDK migration.
+      # That happens deliberately, not on a Monday morning pull request.
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "maven"
+        update-types: ["version-update:semver-major"]
 
   # Workflow actions. These are pinned to commit SHAs; Dependabot updates the SHA and the
   # version comment together, which is the main reason SHA pinning stays maintainable.
@@ -50,3 +71,9 @@ updates:
     labels: ["dependencies", "github-actions"]
     commit-message:
       prefix: "ci"
+    groups:
+      # One pull request for all of them. Action bumps are small and arrive together, and
+      # reviewing four SHA changes in one place is easier than in four places.
+      actions:
+        patterns:
+          - "*"
