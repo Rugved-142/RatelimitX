@@ -26,6 +26,13 @@ import jakarta.annotation.PreDestroy;
  * <p>Events are dropped, never buffered to disk and never retried indefinitely. Two things cause
  * a drop and each has its own counter: a full queue ({@code ratelimit.events.dropped}) and a send
  * that failed or timed out ({@code ratelimit.events.failed}).
+ *
+ * <p>The thread hands each event to the producer and does not wait for the acknowledgement; the
+ * counters are incremented from the producer's own callback. Waiting per event made this thread
+ * the bottleneck instead of the broker: one blocking round trip each, and with a 20ms linger
+ * every one of them waited for a batch that a single in-flight record could never fill. Measured
+ * at roughly 119 requests a second, that lost well over half the events to a queue that could not
+ * drain. Not waiting lets the producer batch, which is what it is for.
  */
 @Component
 public class RateLimitEventPublisher {
@@ -120,14 +127,21 @@ public class RateLimitEventPublisher {
     private void send(RateLimitEvent event) {
         try {
             kafkaTemplate.send(properties.getTopic(), event.userId(), event)
-                    .get(properties.getSendTimeout().toMillis(), TimeUnit.MILLISECONDS);
-            published.increment();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
+                    .whenComplete((result, failure) -> {
+                        if (failure == null) {
+                            published.increment();
+                        } else {
+                            // Best effort by design: count it, say so at debug, move on.
+                            failed.increment();
+                            logger.debug("Dropped analytics event {}: {}",
+                                    event.eventId(), failure.toString());
+                        }
+                    });
         } catch (Exception e) {
-            // Best effort by design: log once per event at debug and move on.
+            // send() itself throws when it cannot get metadata within max.block.ms.
             failed.increment();
-            logger.debug("Dropped analytics event {}: {}", event.eventId(), e.toString());
+            logger.debug("Could not hand analytics event {} to the producer: {}",
+                    event.eventId(), e.toString());
         }
     }
 }

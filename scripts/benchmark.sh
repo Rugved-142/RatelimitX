@@ -10,7 +10,10 @@
 # Works on Linux and macOS. It deliberately does not open a browser: the report is a file.
 #
 # Usage:
-#   scripts/benchmark.sh [--runs N] [--algorithm NAME] [--label TEXT]
+#   scripts/benchmark.sh [--runs N] [--algorithm NAME] [--label TEXT] [--dir-suffix TEXT]
+#
+# --dir-suffix appends to the output directory name, so two labelled result sets can be produced
+# on the same day without the second overwriting the first.
 #
 set -euo pipefail
 
@@ -20,6 +23,7 @@ cd "$REPO_ROOT"
 RUNS=3
 ALGORITHM="${RLX_ALGORITHM:-sliding-window}"
 LABEL=""
+DIR_SUFFIX=""
 BASE_URL="${RLX_BASE_URL:-http://localhost:8080}"
 
 # Load shape. Overridable from the environment so a run can be widened without editing the script.
@@ -48,13 +52,14 @@ while [[ $# -gt 0 ]]; do
     --runs) RUNS="$2"; shift 2 ;;
     --algorithm) ALGORITHM="$2"; shift 2 ;;
     --label) LABEL="$2"; shift 2 ;;
+    --dir-suffix) DIR_SUFFIX="$2"; shift 2 ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
 DATE_DIR="$(date -u +%Y-%m-%d)"
-OUT_ROOT="docs/benchmarks/$DATE_DIR"
+OUT_ROOT="docs/benchmarks/${DATE_DIR}${DIR_SUFFIX}"
 mkdir -p "$OUT_ROOT"
 
 log() { printf '\n== %s\n' "$*"; }
@@ -238,6 +243,14 @@ GENERATED=(
 )
 git_dirty="$(test -n "$(git status --porcelain -- . "${GENERATED[@]}" 2>/dev/null)" && echo true || echo false)"
 
+# Whether the analytics feed was publishing during this run. Taken from the container's own
+# environment: a value in .env that was never applied would otherwise be recorded as fact.
+app_env="$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' ratelimitx-app 2>/dev/null || true)"
+events_enabled="$(grep -E '^RATELIMIT_EVENTS_ENABLED=' <<< "$app_env" | cut -d= -f2- | tr -d '\r' || true)"
+analytics_enabled="$(grep -E '^RATELIMIT_ANALYTICS_ENABLED=' <<< "$app_env" | cut -d= -f2- | tr -d '\r' || true)"
+events_enabled="${events_enabled:-false}"
+analytics_enabled="${analytics_enabled:-false}"
+
 python3 - "$OUT_ROOT/environment.json" <<PYEOF
 import json, sys
 env = {
@@ -279,6 +292,10 @@ env = {
         "stepSeconds": int("$STEP_SECONDS"),
         "warmupSeconds": int("$WARMUP_SECONDS"),
         "runs": int("$RUNS"),
+        # Read from the running container, not from .env, so it records what was actually
+        # measured rather than what was intended.
+        "eventsEnabled": "$events_enabled" == "true",
+        "analyticsEnabled": "$analytics_enabled" == "true",
     },
 }
 with open(sys.argv[1], "w") as handle:

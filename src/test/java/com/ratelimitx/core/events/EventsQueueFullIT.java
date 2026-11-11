@@ -42,7 +42,6 @@ import io.micrometer.core.instrument.MeterRegistry;
         "ratelimit.analytics.enabled=false",
         "ratelimit.events.topic=ratelimit-events-full",
         "ratelimit.events.queue-capacity=1",
-        "ratelimit.events.send-timeout=500ms",
         "spring.kafka.producer.properties.delivery.timeout.ms=400",
         "spring.kafka.producer.properties.request.timeout.ms=300",
         "spring.kafka.producer.properties.linger.ms=0",

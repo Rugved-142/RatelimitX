@@ -1,7 +1,5 @@
 package com.ratelimitx.core.events;
 
-import java.time.Duration;
-
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -30,9 +28,6 @@ public class EventsProperties {
      */
     private int queueCapacity = 1000;
 
-    /** How long the sending thread waits for one broker acknowledgement before giving up. */
-    private Duration sendTimeout = Duration.ofSeconds(2);
-
     public boolean isEnabled() {
         return enabled;
     }
@@ -55,13 +50,5 @@ public class EventsProperties {
 
     public void setQueueCapacity(int queueCapacity) {
         this.queueCapacity = queueCapacity;
-    }
-
-    public Duration getSendTimeout() {
-        return sendTimeout;
-    }
-
-    public void setSendTimeout(Duration sendTimeout) {
-        this.sendTimeout = sendTimeout;
     }
 }
